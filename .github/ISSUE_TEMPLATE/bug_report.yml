@@ -1,0 +1,56 @@
+name: Bug report
+description: Report a defect in the aiasec CLI, gate, reports, target driver, or GitHub Action.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug.
+
+        Do not use this form for undisclosed security vulnerabilities in aiasec.
+        Use the private reporting path described in `SECURITY.md`.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Describe the defect clearly and concisely.
+      placeholder: What is broken?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Provide the smallest reliable reproduction, including the exact command.
+      placeholder: |
+        1. aiasec run --target ... --execute --output report.sarif
+        2. aiasec gate --report report.sarif --max-high 0
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include the exit code and any error message. Remove secrets first.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: aiasec version
+      description: Output of `aiasec --version`, or the commit you installed.
+      placeholder: aiasec 0.1.0
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Python version, OS, shell, and whether this ran locally or in GitHub Actions.

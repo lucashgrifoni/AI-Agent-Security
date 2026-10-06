@@ -1,0 +1,55 @@
+name: Wrong probe result
+description: A probe flagged a safe response (false positive) or missed a compromised one (false negative).
+title: "[Probe]: "
+labels:
+  - probe-result
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form when a bundled probe produced a result you believe is wrong.
+
+        Do not paste real secrets, customer data, or private transcripts. Reduce the
+        agent response to the smallest text that reproduces the result.
+  - type: input
+    id: probe_id
+    attributes:
+      label: Probe id
+      placeholder: rag-doc-poison-001
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind of error
+      options:
+        - False positive (a safe response was flagged)
+        - False negative (a compromised response passed)
+    validations:
+      required: true
+  - type: textarea
+    id: observation
+    attributes:
+      label: Response and tool calls
+      description: The assistant response and the tool names it called, reduced to the minimum.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: reasoning
+    attributes:
+      label: Why the result is wrong
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Observation mode
+      options:
+        - mcp-stdio-target
+        - single-observation
+  - type: input
+    id: version
+    attributes:
+      label: aiasec version
+      placeholder: aiasec 0.1.0
