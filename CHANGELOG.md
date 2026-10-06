@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Added target mode: `aiasec run --target <config> --execute` starts an agent harness
+  as an MCP stdio server and sends each probe's inputs to it through one tool call,
+  then scores that probe against the response and tool calls the target reports.
+  Reports record `observationMode: mcp-stdio-target`. The contract is in
+  `docs/target-contract.md`.
+- `--target` never starts a process without `--execute`, and cannot be combined
+  with `--response`, `--response-file`, or `--tools-called`.
+- A target that stays silent longer than `timeoutSeconds` (default 30), omits
+  `structuredContent.toolsCalled`, returns `isError`, or lacks the agent tool fails
+  the run with exit 2.
+- Added two deterministic reference targets: `examples/target-mcp-good` passes every
+  bundled probe and `examples/target-mcp-vulnerable` fails every one. Tests and CI
+  drive both.
+- The stdio transport stops the child process before closing its output pipe, so
+  closing a hung target no longer blocks until the process exits on its own.
 - Fixed the wheel build: the bundled probes were added to the wheel twice, so
   `pip install .` failed. CI now builds the wheel, checks every probe ships in it,
   and runs the quickstart from a clean install.

@@ -4,26 +4,24 @@
 [![Security CI](https://github.com/lucashgrifoni/AI-Agent-Security/actions/workflows/security.yml/badge.svg?branch=master)](https://github.com/lucashgrifoni/AI-Agent-Security/actions/workflows/security.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/lucashgrifoni/AI-Agent-Security/badge)](https://scorecard.dev/viewer/?uri=github.com/lucashgrifoni/AI-Agent-Security)
 
-`aiasec` is a small, reproducible testbed for adversarial checks against AI agents and MCP-style tool boundaries.
+`aiasec` is a small, reproducible testbed for adversarial regression checks against AI agents and MCP tool boundaries. It sends a battery of adversarial probes to your agent, scores each response with deterministic rules, and writes a SARIF report that a release gate turns into PASS or FAIL in CI.
 
-This initial skeleton focuses on a reviewable rules-only core:
-
-- probe definitions in YAML
-- a Typer CLI named `aiasec`
-- Pydantic v2 models for probe contracts
-- deterministic rule evaluation
-- a minimal fakeable MCP stdio adapter for JSON-RPC requests
-- a safe MCP CLI fixture path for local `tools/list` inspection
-- Markdown and SARIF 2.1.0 outputs
-- a release gate that turns a SARIF report into a PASS/FAIL verdict
-- 10 bundled probes across 5 attack categories
+- 10 bundled probes across 5 attack categories, defined in YAML
+- deterministic, rules-only evaluation: no LLM judges the result
+- a live MCP stdio target mode that sends every probe to the agent under test
+- Markdown and SARIF 2.1.0 reports that GitHub code scanning can display
+- a fail-closed release gate with per-severity thresholds
 
 ## Scope
 
-This is not a runtime guardrail and it is not a full red-team framework. Use it only against systems you own or are explicitly authorized to test.
+This is not a runtime guardrail and it is not a full red-team framework. Use it only against systems you own or are explicitly authorized to test. A passing run means the bundled probes did not detect a failure; it is not a security guarantee.
 
-The current implementation evaluates a supplied target observation, such as an assistant response and a list of called tools. Every probe is scored against that one observation; `aiasec` does not yet send each probe's attack to a live target. A passing probe therefore means the observation did not trigger it, not that the target resisted that attack. Reports state this as `observationMode: single-observation`. HTTP and vendor SDK adapters are intentionally left for later iterations.
-The MCP stdio adapter is wired to the CLI only through deterministic local fixtures or dry-run config validation. The CLI does not start a real MCP process by default.
+`aiasec run` has two modes, and every report states which one produced it:
+
+- **Target mode** (`--target`, `observationMode: mcp-stdio-target`): aiasec starts your agent harness as an MCP stdio server and sends each probe's inputs to it, then scores the response and the tool calls the agent reports for that probe. See [docs/target-contract.md](docs/target-contract.md).
+- **Observation mode** (`--response`, `observationMode: single-observation`): aiasec scores every probe against one response you supply. Nothing is sent anywhere, so a passing probe means that response did not trigger it, not that an agent resisted the attack.
+
+HTTP and vendor SDK adapters are left for later iterations.
 
 ## Install
 
@@ -45,17 +43,36 @@ python -m pip install -e ".[dev]"
 
 ## Usage
 
-List bundled probes:
+### Test an agent over MCP
+
+Two reference targets ship in `examples/`: a well-behaved agent and a deliberately
+vulnerable one. Both are deterministic, standard-library MCP servers with no LLM. From
+a clone of this repository:
+
+```bash
+aiasec run --target examples/target-mcp-vulnerable/aiasec-target.json --execute --output vulnerable.sarif
+aiasec gate --report vulnerable.sarif --max-critical 0 --max-high 0 --exit-on-fail
+```
+
+All 10 probes fail and the gate exits 1. Against the good target, all 10 pass:
+
+```bash
+aiasec run --target examples/target-mcp-good/aiasec-target.json --execute --output good.sarif
+aiasec gate --report good.sarif --max-critical 0 --max-high 0 --exit-on-fail
+```
+
+`--execute` is required because `--target` starts the command in the config. Read the
+config before you pass it. To test your own agent, wrap it in a harness that follows
+[docs/target-contract.md](docs/target-contract.md) and point `--target` at its config.
+
+### Inspect probes
 
 ```bash
 aiasec probes list
-```
-
-Show a probe:
-
-```bash
 aiasec probes show direct-injection-001
 ```
+
+### Score a supplied response
 
 Run the bundled probes against a static response:
 
@@ -118,7 +135,9 @@ Detection is sentinel-based: each adversarial prompt instructs the target to
 emit a marker unique to that probe, and the probe asserts the marker is absent.
 Every probe carries a compromised sample and is checked against a well-behaved
 target in `tests/test_probe_suite.py`, which also proves no probe fires on
-another probe's sample.
+another probe's sample. `tests/test_mcp_target.py` and CI send every probe to both
+example targets over MCP stdio: all of them must fail against the vulnerable one and
+pass against the good one.
 
 To write your own, see [docs/writing-probes.md](docs/writing-probes.md).
 
@@ -226,6 +245,7 @@ Trust boundaries:
 - generated SARIF/Markdown reports may be uploaded to CI or code scanning systems
 - MCP CLI fixture input is local JSON and must be reviewed before use
 - MCP stdio config dry-runs print environment variable names only, not values
+- a target config is a command aiasec will run; the child process inherits aiasec's environment
 
 Initial controls:
 
@@ -238,7 +258,9 @@ Initial controls:
 - report locations are repository-relative or probe-root-relative, never absolute machine paths
 - probe payloads target reserved `.test` hostnames, never a live host
 - SARIF includes only failed findings
-- MCP CLI inspection does not execute child processes unless a future command adds an explicit opt-in
+- aiasec starts a process only for `run --target` with `--execute`; `mcp tools list` never does
+- a target that stays silent longer than `timeoutSeconds` fails the run instead of hanging CI
+- a target that does not report its tool calls fails the run instead of passing `tool_not_called` checks
 
 ## Project Structure
 
@@ -246,19 +268,19 @@ Initial controls:
 src/aiasec/
   cli/                 Typer application
   core/                probe models, runner, verdicts, rules evaluator, release gate
-  mcp/                 MCP stdio JSON-RPC adapter, config, fixtures, and transports
+  mcp/                 MCP stdio adapter, target driver, config, fixtures, and transports
   outputs/             Markdown and SARIF renderers
   probes/              bundled probe suite, one directory per category
-docs/                  probe authoring guide
-tests/                 unit tests
+examples/              reference MCP targets (good, vulnerable) and a tools/list fixture
+docs/                  probe authoring guide and target contract
+tests/                 unit and end-to-end tests
 ```
 
 ## Current Limits
 
-- probes score one supplied observation; they do not yet send each probe's attack to a live target
-- MCP stdio support can list tools through a local fixture and validate stdio config dry-runs
-- MCP stdio support is not a live CLI target runner yet
-- the MCP client speaks protocol version `2024-11-05` only
+- target mode supports MCP stdio only, through the harness contract in `docs/target-contract.md`
+- the MCP client speaks protocol version `2024-11-05` only and does not negotiate newer versions
+- each probe is a single tool call; multi-turn probes such as `crescendo-001` send all turns at once
 - no MCP HTTP adapter yet
 - no generic HTTP target adapter yet
 - no LLM-as-judge fallback yet
