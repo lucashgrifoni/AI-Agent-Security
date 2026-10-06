@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Added a composite GitHub Action (`action.yml`): it installs aiasec from the pinned
+  commit, sends the probes to a target, writes SARIF, and fails the job when the gate
+  fails. Inputs reach the scripts through environment variables, never interpolated
+  into shell. `Action self-test` runs it against both reference targets.
+- Documented that the MCP client uses the handshake-based protocol and cannot test a
+  server that implements only the 2026-07-28 revision.
 - Added target mode: `aiasec run --target <config> --execute` starts an agent harness
   as an MCP stdio server and sends each probe's inputs to it through one tool call,
   then scores that probe against the response and tool calls the target reports.
