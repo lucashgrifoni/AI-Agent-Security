@@ -15,6 +15,7 @@ def _sarif(*severities: str) -> dict:
         "runs": [
             {
                 "tool": {"driver": {"name": "aiasec"}},
+                "properties": {"aiasec": {"probesExecuted": max(len(severities), 1)}},
                 "results": [
                     {
                         "ruleId": f"probe-{index}",

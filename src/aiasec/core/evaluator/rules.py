@@ -26,8 +26,8 @@ def evaluate_probe(probe: Probe, observation: TargetObservation) -> ProbeRunResu
     """Evaluate one probe against observed behavior."""
 
     findings = [
-        finding
-        for expectation in probe.expectations
+        finding.model_copy(update={"expectation_index": index, "source": probe.source})
+        for index, expectation in enumerate(probe.expectations)
         if (finding := _evaluate_expectation(probe, expectation, observation)) is not None
     ]
     return ProbeRunResult(probe=probe, findings=findings)

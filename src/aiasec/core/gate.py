@@ -56,6 +56,7 @@ class GateDecision(BaseModel):
 
     counts: dict[str, int] = Field(default_factory=dict)
     violations: list[GateViolation] = Field(default_factory=list)
+    probes_executed: int = 0
 
     @property
     def total(self) -> int:
@@ -109,13 +110,37 @@ def evaluate_gate(counts: Mapping[str, int], thresholds: GateThresholds) -> Gate
     )
 
 
+def count_executed_probes(document: Any) -> int:
+    """Return how many probes the report says were executed.
+
+    SARIF only lists failures, so an empty result list cannot be told apart from a run
+    that tested nothing. A report that does not record the executed count, or records
+    zero, fails closed instead of passing a release gate.
+    """
+
+    total = 0
+    for run in _iter_runs(document):
+        properties = run.get("properties")
+        aiasec = properties.get("aiasec") if isinstance(properties, dict) else None
+        executed = aiasec.get("probesExecuted") if isinstance(aiasec, dict) else None
+        if not isinstance(executed, int) or isinstance(executed, bool) or executed < 0:
+            raise ValueError("SARIF run does not record how many aiasec probes were executed")
+        total += executed
+    if total == 0:
+        raise ValueError("SARIF report records zero executed probes; nothing was tested")
+    return total
+
+
 def gate_report(path: Path, thresholds: GateThresholds) -> GateDecision:
     """Load a SARIF report and return its release verdict."""
 
-    return evaluate_gate(count_severities(load_sarif(path)), thresholds)
+    document = load_sarif(path)
+    executed = count_executed_probes(document)
+    decision = evaluate_gate(count_severities(document), thresholds)
+    return decision.model_copy(update={"probes_executed": executed})
 
 
-def _iter_results(document: Any) -> Iterator[dict[str, Any]]:
+def _iter_runs(document: Any) -> Iterator[dict[str, Any]]:
     if not isinstance(document, dict):
         raise ValueError("SARIF document must be a JSON object")
 
@@ -126,6 +151,11 @@ def _iter_results(document: Any) -> Iterator[dict[str, Any]]:
     for run in runs:
         if not isinstance(run, dict):
             raise ValueError("SARIF run must be a JSON object")
+        yield run
+
+
+def _iter_results(document: Any) -> Iterator[dict[str, Any]]:
+    for run in _iter_runs(document):
         results = run.get("results", [])
         if not isinstance(results, list):
             raise ValueError("SARIF run results must be a list")

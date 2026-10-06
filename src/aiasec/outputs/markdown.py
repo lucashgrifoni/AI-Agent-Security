@@ -6,6 +6,7 @@ from collections import Counter
 from collections.abc import Sequence
 
 from aiasec.core.verdict import ProbeRunResult
+from aiasec.outputs.sarif import OBSERVATION_MODE
 
 
 def render_markdown(results: Sequence[ProbeRunResult]) -> str:
@@ -24,6 +25,10 @@ def render_markdown(results: Sequence[ProbeRunResult]) -> str:
         f"- Probes: {total}",
         f"- Failed probes: {len(failed_results)}",
         f"- Findings: {finding_count}",
+        f"- Observation mode: {OBSERVATION_MODE}",
+        "",
+        "Every probe was scored against the same supplied observation. A passing probe means",
+        "that observation did not trigger it, not that its attack was sent to a target.",
         "",
         "## Severity",
         "",
