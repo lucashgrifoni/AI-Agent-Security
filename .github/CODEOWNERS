@@ -1,0 +1,8 @@
+# Default ownership for this single-maintainer repository.
+* @lucashgrifoni
+
+# Sensitive paths.
+.github/ @lucashgrifoni
+src/ @lucashgrifoni
+src/aiasec/probes/ @lucashgrifoni
+src/aiasec/core/gate.py @lucashgrifoni
