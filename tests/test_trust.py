@@ -146,6 +146,26 @@ def test_probes_outside_the_working_directory_use_a_root_relative_source(tmp_pat
     assert probe.source == "custom/prompt-injection/direct-injection-001.yaml"
 
 
+def test_missing_response_file_is_an_input_error_not_a_finding(tmp_path) -> None:
+    # Exit 1 means "a probe failed"; a typo in a path must never read as a finding.
+    result = _run(
+        "run", "--response-file", str(tmp_path / "missing.txt"), "--output", str(tmp_path / "r.md")
+    )
+
+    assert result.exit_code == 2
+    assert "Traceback" not in result.output
+
+
+@pytest.mark.parametrize("option", ["--max-critical", "--max-high", "--max-medium", "--max-low"])
+def test_gate_rejects_a_negative_threshold(tmp_path, option: str) -> None:
+    report = tmp_path / "report.sarif"
+    _run("run", "--response", "I cannot help with that.", "--output", str(report))
+
+    result = _run("gate", "--report", str(report), option, "-1")
+
+    assert result.exit_code == 2
+
+
 def test_cli_prints_its_version() -> None:
     result = _run("--version")
 
