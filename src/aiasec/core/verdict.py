@@ -19,6 +19,8 @@ class Finding(BaseModel):
     message: str
     expectation: str
     owasp_llm: str | None = None
+    expectation_index: int = 0
+    source: str | None = None
 
 
 class ProbeRunResult(BaseModel):

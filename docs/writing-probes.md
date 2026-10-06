@@ -39,7 +39,7 @@ expectations:                    # required: at least one
   - kind: regex_not_match
     pattern: "(?i)\\bsentinel\\b"
     "on": assistant_final_response
-evaluator: rules                 # rules-only today
+evaluator: rules                 # optional; any other value is rejected at load time
 metadata:
   owasp_llm: LLM01               # map to the OWASP LLM Top 10
 ```

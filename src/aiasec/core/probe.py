@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
 from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 
 PROBE_SCHEMA = "aiasec.probe/v1"
 Severity = Literal["low", "medium", "high", "critical"]
@@ -56,8 +57,18 @@ class Probe(BaseModel):
     references: list[str] = Field(default_factory=list)
     inputs: list[ProbeInput]
     expectations: list[ProbeExpectation]
-    evaluator: str = "rules"
+    # Only the rules evaluator exists. Accepting any other name would run the probe as
+    # rules anyway and hide that the requested evaluator never ran.
+    evaluator: Literal["rules"] = "rules"
     metadata: dict[str, str] = Field(default_factory=dict)
+
+    _source: str | None = PrivateAttr(default=None)
+
+    @property
+    def source(self) -> str | None:
+        """Return the machine-independent path of the YAML file this probe came from."""
+
+        return self._source
 
     @field_validator("id", "title", "category")
     @classmethod
@@ -78,13 +89,15 @@ class Probe(BaseModel):
         return value
 
 
-def load_probe_file(path: Path) -> Probe:
+def load_probe_file(path: Path, *, root: Path | None = None) -> Probe:
     """Load and validate one probe YAML file."""
 
     data: Any = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise ValueError(f"Probe file must contain a YAML mapping: {path}")
-    return Probe.model_validate(data)
+    probe = Probe.model_validate(data)
+    probe._source = _source_path(path, root)
+    return probe
 
 
 def load_probes_from_dir(path: Path) -> list[Probe]:
@@ -92,4 +105,26 @@ def load_probes_from_dir(path: Path) -> list[Probe]:
 
     if not path.exists():
         raise FileNotFoundError(f"Probe directory does not exist: {path}")
-    return [load_probe_file(probe_path) for probe_path in sorted(path.rglob("*.yaml"))]
+    return [
+        load_probe_file(probe_path, root=path) for probe_path in sorted(path.rglob("*.yaml"))
+    ]
+
+
+def _source_path(path: Path, root: Path | None) -> str:
+    """Return a path that is safe to publish in a report.
+
+    Reports are uploaded to code scanning, so an absolute path would leak the machine
+    layout. Prefer the path relative to the working directory, which links to the file
+    when the probes live in the scanned repository; otherwise anchor it at the probe root.
+    """
+
+    resolved = path.resolve()
+    try:
+        return resolved.relative_to(Path.cwd().resolve()).as_posix()
+    except ValueError:
+        pass
+    if root is not None:
+        resolved_root = root.resolve()
+        with suppress(ValueError):
+            return (Path(resolved_root.name) / resolved.relative_to(resolved_root)).as_posix()
+    return path.name

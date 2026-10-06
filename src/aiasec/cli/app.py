@@ -8,11 +8,13 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+import yaml
 from pydantic import ValidationError
 
+from aiasec import __version__
 from aiasec.core.evaluator.rules import TargetObservation
 from aiasec.core.gate import GateThresholds, gate_report
-from aiasec.core.probe import load_probe_file, load_probes_from_dir
+from aiasec.core.probe import Probe, load_probes_from_dir
 from aiasec.core.runner import run_probes
 from aiasec.mcp.config import McpStdioConfig, load_stdio_config
 from aiasec.mcp.fixtures import load_jsonrpc_fixture
@@ -41,8 +43,37 @@ app.add_typer(mcp_app, name="mcp")
 mcp_app.add_typer(mcp_tools_app, name="tools")
 
 
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(f"aiasec {__version__}")
+        raise typer.Exit()
+
+
+@app.callback()
+def main(
+    version: Annotated[
+        bool,
+        typer.Option(
+            "--version",
+            callback=_version_callback,
+            is_eager=True,
+            help="Show the version and exit.",
+        ),
+    ] = False,
+) -> None:
+    """AI agent and MCP security regression testbed."""
+
+
 def _probe_root(probes_dir: Path | None) -> Path:
     return probes_dir if probes_dir is not None else DEFAULT_PROBES_DIR
+
+
+def _load_probes(probes_dir: Path | None) -> list[Probe]:
+    try:
+        return load_probes_from_dir(_probe_root(probes_dir))
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        typer.echo(f"Failed to load probes: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
 
 
 def _read_response(response: str | None, response_file: Path | None) -> str:
@@ -127,7 +158,14 @@ def run(
 ) -> None:
     """Run probes against a supplied target observation."""
 
-    probes = load_probes_from_dir(_probe_root(probes_dir))
+    probes = _load_probes(probes_dir)
+    if not probes:
+        typer.echo(
+            f"No probes found under {_probe_root(probes_dir)}; refusing to write a report "
+            "that tested nothing.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
     observation = TargetObservation(
         assistant_final_response=_read_response(response, response_file),
         tools_called=_parse_tools(tools_called),
@@ -193,6 +231,7 @@ def gate(
     _echo_json(
         {
             "counts": decision.counts,
+            "probesExecuted": decision.probes_executed,
             "report": str(report),
             "thresholds": thresholds.model_dump(exclude_none=True),
             "total": decision.total,
@@ -213,7 +252,7 @@ def list_probes(
 ) -> None:
     """List available probe identifiers."""
 
-    for probe in load_probes_from_dir(_probe_root(probes_dir)):
+    for probe in _load_probes(probes_dir):
         typer.echo(f"{probe.id}\t{probe.severity}\t{probe.category}\t{probe.title}")
 
 
@@ -227,8 +266,7 @@ def show_probe(
 ) -> None:
     """Show one probe as normalized JSON."""
 
-    for path in sorted(_probe_root(probes_dir).rglob("*.yaml")):
-        probe = load_probe_file(path)
+    for probe in _load_probes(probes_dir):
         if probe.id == probe_id:
             typer.echo(probe.model_dump_json(indent=2, by_alias=True))
             return
