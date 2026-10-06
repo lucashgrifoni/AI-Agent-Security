@@ -1,6 +1,13 @@
+# Conventions (from the dependabot template):
+#   - groups   : batch minor/patch bumps into fewer reviewable PRs.
+#   - cooldown : wait a few days before adopting a new release, so a compromised
+#                release is usually caught before it is auto-proposed.
+#   - ignore   : surface major-version jumps manually instead of auto-opening them.
 version: 2
+
 updates:
-  - package-ecosystem: "pip"
+  # Refreshes the commit-SHA pins in .github/workflows.
+  - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
@@ -10,8 +17,50 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
+      - "github-actions"
+      - "security"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:20"
+      timezone: "America/Sao_Paulo"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
       - "python"
       - "security"
     commit-message:
       prefix: "deps"
       include: "scope"
+    cooldown:
+      default-days: 7
+    groups:
+      pip:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
