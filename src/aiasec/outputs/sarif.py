@@ -12,11 +12,17 @@ from aiasec.core.verdict import Finding, ProbeRunResult
 
 SARIF_VERSION = "2.1.0"
 FINGERPRINT_KEY = "aiasecFinding/v1"
-# Today every probe is scored against one supplied observation; no attack is sent.
-OBSERVATION_MODE = "single-observation"
+# Every probe scored against one supplied observation; no attack was sent anywhere.
+SINGLE_OBSERVATION_MODE = "single-observation"
+# Each probe's inputs were sent to a live target over MCP stdio.
+MCP_TARGET_MODE = "mcp-stdio-target"
 
 
-def render_sarif(results: Sequence[ProbeRunResult]) -> dict[str, Any]:
+def render_sarif(
+    results: Sequence[ProbeRunResult],
+    *,
+    observation_mode: str = SINGLE_OBSERVATION_MODE,
+) -> dict[str, Any]:
     """Render failed findings as a SARIF 2.1.0 document."""
 
     findings = [finding for result in results for finding in result.findings]
@@ -40,7 +46,7 @@ def render_sarif(results: Sequence[ProbeRunResult]) -> dict[str, Any]:
                     "aiasec": {
                         "probesExecuted": len(results),
                         "probesFailed": sum(1 for result in results if not result.passed),
-                        "observationMode": OBSERVATION_MODE,
+                        "observationMode": observation_mode,
                     }
                 },
                 "results": [_result(finding) for finding in findings],
@@ -49,10 +55,15 @@ def render_sarif(results: Sequence[ProbeRunResult]) -> dict[str, Any]:
     }
 
 
-def render_sarif_json(results: Sequence[ProbeRunResult]) -> str:
+def render_sarif_json(
+    results: Sequence[ProbeRunResult],
+    *,
+    observation_mode: str = SINGLE_OBSERVATION_MODE,
+) -> str:
     """Render SARIF as stable pretty JSON."""
 
-    return json.dumps(render_sarif(results), indent=2, sort_keys=True) + "\n"
+    document = render_sarif(results, observation_mode=observation_mode)
+    return json.dumps(document, indent=2, sort_keys=True) + "\n"
 
 
 def _deduplicate_findings(findings: Sequence[Finding]) -> list[Finding]:
