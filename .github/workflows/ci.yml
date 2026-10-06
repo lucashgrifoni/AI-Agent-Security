@@ -179,6 +179,18 @@ jobs:
           "$AIASEC" gate --report bad.sarif --max-high 0 --exit-on-fail
           test $? -eq 1 || { echo "the gate must fail a compromised report"; exit 1; }
 
+      - name: Drive the example MCP targets with the installed wheel
+        shell: bash
+        run: |
+          AIASEC="$RUNNER_TEMP/user/bin/aiasec"
+          "$AIASEC" run --target examples/target-mcp-good/aiasec-target.json --execute --output "$RUNNER_TEMP/good.sarif"
+          "$AIASEC" gate --report "$RUNNER_TEMP/good.sarif" --max-critical 0 --max-high 0 --exit-on-fail
+          set +e
+          "$AIASEC" run --target examples/target-mcp-vulnerable/aiasec-target.json --execute --output "$RUNNER_TEMP/vulnerable.sarif"
+          test $? -eq 1 || { echo "the vulnerable target must fail the run"; exit 1; }
+          "$AIASEC" gate --report "$RUNNER_TEMP/vulnerable.sarif" --max-critical 0 --max-high 0 --exit-on-fail
+          test $? -eq 1 || { echo "the gate must fail the vulnerable target"; exit 1; }
+
       - name: Upload dist
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:

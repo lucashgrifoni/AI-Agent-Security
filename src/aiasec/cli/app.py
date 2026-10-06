@@ -15,13 +15,15 @@ from aiasec import __version__
 from aiasec.core.evaluator.rules import TargetObservation
 from aiasec.core.gate import GateThresholds, gate_report
 from aiasec.core.probe import Probe, load_probes_from_dir
-from aiasec.core.runner import run_probes
+from aiasec.core.runner import run_probes, run_probes_against
+from aiasec.core.verdict import ProbeRunResult
 from aiasec.mcp.config import McpStdioConfig, load_stdio_config
 from aiasec.mcp.fixtures import load_jsonrpc_fixture
 from aiasec.mcp.stdio import McpProtocolError, McpRemoteError, McpStdioAdapter
+from aiasec.mcp.target import McpAgentTarget, McpTargetError
 from aiasec.mcp.transport import McpTransportError
 from aiasec.outputs.markdown import render_markdown
-from aiasec.outputs.sarif import render_sarif_json
+from aiasec.outputs.sarif import MCP_TARGET_MODE, SINGLE_OBSERVATION_MODE, render_sarif_json
 
 DEFAULT_PROBES_DIR = Path(__file__).resolve().parents[1] / "probes"
 
@@ -116,6 +118,39 @@ def _load_config(config: Path) -> McpStdioConfig:
         raise typer.BadParameter(str(exc), param_hint="--config") from exc
 
 
+def _run_against_target(
+    probes: list[Probe],
+    target: Path,
+    *,
+    execute: bool,
+) -> list[ProbeRunResult]:
+    try:
+        config = load_stdio_config(target)
+    except (OSError, ValueError) as exc:
+        typer.echo(f"Invalid target config {target}: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+    if not execute:
+        typer.echo(
+            f"Refusing to start {config.command!r} from {target}. Review the command, then "
+            "pass --execute to let aiasec run it.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    try:
+        with McpAgentTarget.start(config) as agent:
+            return run_probes_against(probes, agent.observe)
+    except (
+        McpProtocolError,
+        McpRemoteError,
+        McpTargetError,
+        McpTransportError,
+        OSError,
+        ValueError,
+    ) as exc:
+        typer.echo(f"Target run failed: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+
+
 def _render_stdio_dry_run(config_path: Path, config: McpStdioConfig) -> dict[str, object]:
     return {
         "config": str(config_path),
@@ -155,8 +190,27 @@ def run(
         OutputFormat,
         typer.Option("--format", help="Report format."),
     ] = OutputFormat.auto,
+    target: Annotated[
+        Path | None,
+        typer.Option(
+            "--target",
+            help="MCP stdio config of the agent under test. Sends each probe to it.",
+        ),
+    ] = None,
+    execute: Annotated[
+        bool,
+        typer.Option("--execute", help="Allow aiasec to start the --target process."),
+    ] = False,
 ) -> None:
-    """Run probes against a supplied target observation."""
+    """Run probes against a live MCP target or a supplied observation."""
+
+    if target is not None and (response, response_file, tools_called) != (None, None, None):
+        typer.echo(
+            "--target sends each probe to the target; it cannot be combined with "
+            "--response, --response-file, or --tools-called.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
 
     probes = _load_probes(probes_dir)
     if not probes:
@@ -166,17 +220,23 @@ def run(
             err=True,
         )
         raise typer.Exit(code=2)
-    observation = TargetObservation(
-        assistant_final_response=_read_response(response, response_file),
-        tools_called=_parse_tools(tools_called),
-    )
-    results = run_probes(probes, observation)
+
+    if target is not None:
+        results = _run_against_target(probes, target, execute=execute)
+        observation_mode = MCP_TARGET_MODE
+    else:
+        observation = TargetObservation(
+            assistant_final_response=_read_response(response, response_file),
+            tools_called=_parse_tools(tools_called),
+        )
+        results = run_probes(probes, observation)
+        observation_mode = SINGLE_OBSERVATION_MODE
     rendered_format = _resolve_format(output, output_format)
 
     if rendered_format is OutputFormat.sarif:
-        report = render_sarif_json(results)
+        report = render_sarif_json(results, observation_mode=observation_mode)
     else:
-        report = render_markdown(results)
+        report = render_markdown(results, observation_mode=observation_mode)
 
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(report, encoding="utf-8")

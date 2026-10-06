@@ -1,10 +1,12 @@
 # Writing Probes
 
 A probe is a small, versioned YAML file that asserts one security property of an
-AI agent or MCP tool boundary. Probes are deterministic and rules-only: the
-engine evaluates a single supplied observation (an assistant response plus the
-list of tools that were called) against every probe's expectations. There is no
-LLM-as-judge in this evaluation path.
+AI agent or MCP tool boundary. Probes are deterministic and rules-only: each probe
+is scored against an observation, meaning an assistant response plus the list of
+tools that were called. In target mode (`aiasec run --target`), aiasec sends the
+probe's `inputs` to the agent and observes what it did for that probe; in
+observation mode (`--response`), every probe is scored against one supplied
+observation. There is no LLM-as-judge in either path.
 
 This guide is enough to contribute a probe without reading the source.
 

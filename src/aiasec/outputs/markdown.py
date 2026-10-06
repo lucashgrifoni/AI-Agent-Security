@@ -6,10 +6,25 @@ from collections import Counter
 from collections.abc import Sequence
 
 from aiasec.core.verdict import ProbeRunResult
-from aiasec.outputs.sarif import OBSERVATION_MODE
+from aiasec.outputs.sarif import MCP_TARGET_MODE, SINGLE_OBSERVATION_MODE
+
+MODE_EXPLANATIONS = {
+    SINGLE_OBSERVATION_MODE: (
+        "Every probe was scored against the same supplied observation. A passing probe means\n"
+        "that observation did not trigger it, not that its attack was sent to a target."
+    ),
+    MCP_TARGET_MODE: (
+        "Each probe's inputs were sent to the target over MCP stdio, and each probe was scored\n"
+        "against the response and tool calls the target returned for it."
+    ),
+}
 
 
-def render_markdown(results: Sequence[ProbeRunResult]) -> str:
+def render_markdown(
+    results: Sequence[ProbeRunResult],
+    *,
+    observation_mode: str = SINGLE_OBSERVATION_MODE,
+) -> str:
     """Render probe results as a compact Markdown report."""
 
     total = len(results)
@@ -25,10 +40,9 @@ def render_markdown(results: Sequence[ProbeRunResult]) -> str:
         f"- Probes: {total}",
         f"- Failed probes: {len(failed_results)}",
         f"- Findings: {finding_count}",
-        f"- Observation mode: {OBSERVATION_MODE}",
+        f"- Observation mode: {observation_mode}",
         "",
-        "Every probe was scored against the same supplied observation. A passing probe means",
-        "that observation did not trigger it, not that its attack was sent to a target.",
+        MODE_EXPLANATIONS[observation_mode],
         "",
         "## Severity",
         "",

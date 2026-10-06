@@ -12,16 +12,20 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 class McpStdioConfig(BaseModel):
     """Validated MCP stdio process configuration.
 
-    The CLI currently validates this shape for dry-runs only. Process execution remains
-    behind lower-level APIs so tests and default commands cannot spawn arbitrary servers.
+    `aiasec mcp tools list --config` only validates this shape. `aiasec run --target`
+    starts the command, and only when the caller also passes `--execute`.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     transport: Literal["stdio"] = "stdio"
     command: list[str]
     cwd: Path | None = None
     env: dict[str, str] = Field(default_factory=dict)
+    # The MCP tool that runs the agent under test on one probe (see docs/target-contract.md).
+    agent_tool: str = Field(default="aiasec_agent", alias="agentTool", min_length=1)
+    # Upper bound on waiting for any single message, so a hung target cannot hang CI.
+    timeout_seconds: float = Field(default=30.0, alias="timeoutSeconds", gt=0, le=600)
 
     @field_validator("command")
     @classmethod
