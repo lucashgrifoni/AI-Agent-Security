@@ -180,7 +180,13 @@ def run(
     ] = None,
     response_file: Annotated[
         Path | None,
-        typer.Option("--response-file", help="File containing observed assistant final response."),
+        typer.Option(
+            "--response-file",
+            help="File containing observed assistant final response.",
+            exists=True,
+            dir_okay=False,
+            readable=True,
+        ),
     ] = None,
     tools_called: Annotated[
         str | None,
@@ -255,19 +261,19 @@ def gate(
     ],
     max_critical: Annotated[
         int | None,
-        typer.Option("--max-critical", help="Maximum tolerated critical findings."),
+        typer.Option("--max-critical", min=0, help="Maximum tolerated critical findings."),
     ] = None,
     max_high: Annotated[
         int | None,
-        typer.Option("--max-high", help="Maximum tolerated high findings."),
+        typer.Option("--max-high", min=0, help="Maximum tolerated high findings."),
     ] = None,
     max_medium: Annotated[
         int | None,
-        typer.Option("--max-medium", help="Maximum tolerated medium findings."),
+        typer.Option("--max-medium", min=0, help="Maximum tolerated medium findings."),
     ] = None,
     max_low: Annotated[
         int | None,
-        typer.Option("--max-low", help="Maximum tolerated low findings."),
+        typer.Option("--max-low", min=0, help="Maximum tolerated low findings."),
     ] = None,
     exit_on_fail: Annotated[
         bool,

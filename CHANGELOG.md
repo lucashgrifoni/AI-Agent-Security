@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- `aiasec run --response-file` with a missing file exits 2 with a usage error. It
+  used to raise a traceback and exit 1, which reads as "a probe failed".
+- `aiasec gate` rejects negative `--max-*` thresholds (exit 2), and `GateThresholds`
+  rejects them in the Python API.
 - Added a composite GitHub Action (`action.yml`): it installs aiasec from the pinned
   commit, sends the probes to a target, writes SARIF, and fails the job when the gate
   fails. Inputs reach the scripts through environment variables, never interpolated

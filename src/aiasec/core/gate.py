@@ -27,10 +27,10 @@ class GateThresholds(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    max_critical: int | None = None
-    max_high: int | None = None
-    max_medium: int | None = None
-    max_low: int | None = None
+    max_critical: int | None = Field(default=None, ge=0)
+    max_high: int | None = Field(default=None, ge=0)
+    max_medium: int | None = Field(default=None, ge=0)
+    max_low: int | None = Field(default=None, ge=0)
 
     def limit_for(self, severity: Severity) -> int | None:
         """Return the configured limit for one severity."""
