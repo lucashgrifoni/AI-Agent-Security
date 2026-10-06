@@ -1,0 +1,129 @@
+# aiasec composite action
+#
+# Sends the bundled (or your own) probes to an agent exposed over MCP stdio, writes a
+# SARIF report, and fails the job when the release gate fails.
+#
+# Using this action is the opt-in to start the target command: it passes --execute.
+# Review the target config like any other code your workflow runs.
+#
+# The action installs aiasec from its own checkout ($GITHUB_ACTION_PATH), so the
+# version you pin with `uses: lucashgrifoni/AI-Agent-Security@<sha>` is the version
+# that runs. Uploading the SARIF needs `security-events: write`, which a composite
+# action cannot grant, so the calling workflow does it (see the README example).
+
+name: "aiasec AI agent security regression"
+description: "Send adversarial probes to an AI agent over MCP stdio, write SARIF, and gate the release."
+author: "Lucas Henrique Grifoni"
+branding:
+  icon: "shield"
+  color: "red"
+
+inputs:
+  target:
+    description: "Path to the aiasec target config (MCP stdio) of the agent under test."
+    required: true
+  probes:
+    description: "Directory of probe YAML files. Defaults to the bundled suite."
+    required: false
+    default: ""
+  sarif-file:
+    description: "Where to write the SARIF report."
+    required: false
+    default: "aiasec.sarif"
+  max-critical:
+    description: "Maximum tolerated critical findings. Empty means unlimited."
+    required: false
+    default: "0"
+  max-high:
+    description: "Maximum tolerated high findings. Empty means unlimited."
+    required: false
+    default: "0"
+  max-medium:
+    description: "Maximum tolerated medium findings. Empty means unlimited."
+    required: false
+    default: ""
+  max-low:
+    description: "Maximum tolerated low findings. Empty means unlimited."
+    required: false
+    default: ""
+  python-version:
+    description: "Python used to install and run aiasec (3.12 or newer)."
+    required: false
+    default: "3.12"
+
+outputs:
+  sarif-file:
+    description: "Path of the SARIF report."
+    value: ${{ steps.run.outputs.sarif-file }}
+  verdict:
+    description: "PASS or FAIL from the release gate."
+    value: ${{ steps.gate.outputs.verdict }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Setup Python for aiasec
+      uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install aiasec from the pinned action checkout
+      shell: bash
+      run: |
+        python -m venv "$RUNNER_TEMP/aiasec-venv"
+        "$RUNNER_TEMP/aiasec-venv/bin/python" -m pip install --quiet "$GITHUB_ACTION_PATH"
+
+    - name: Send the probes to the target
+      id: run
+      shell: bash
+      # Inputs arrive through env, never interpolated into the script, so a hostile
+      # input value cannot inject shell.
+      env:
+        AIASEC_TARGET: ${{ inputs.target }}
+        AIASEC_PROBES: ${{ inputs.probes }}
+        AIASEC_SARIF: ${{ inputs.sarif-file }}
+      run: |
+        args=(run --target "$AIASEC_TARGET" --execute --output "$AIASEC_SARIF" --format sarif)
+        if [ -n "$AIASEC_PROBES" ]; then args+=(--probes "$AIASEC_PROBES"); fi
+        set +e
+        "$RUNNER_TEMP/aiasec-venv/bin/aiasec" "${args[@]}"
+        status=$?
+        set -e
+        # 0 = no probe failed, 1 = findings (the gate decides), anything else = broken run.
+        if [ "$status" -ne 0 ] && [ "$status" -ne 1 ]; then
+          echo "::error::aiasec run failed with exit code $status"
+          exit "$status"
+        fi
+        echo "sarif-file=$AIASEC_SARIF" >> "$GITHUB_OUTPUT"
+
+    - name: Apply the release gate
+      id: gate
+      shell: bash
+      env:
+        AIASEC_SARIF: ${{ inputs.sarif-file }}
+        MAX_CRITICAL: ${{ inputs.max-critical }}
+        MAX_HIGH: ${{ inputs.max-high }}
+        MAX_MEDIUM: ${{ inputs.max-medium }}
+        MAX_LOW: ${{ inputs.max-low }}
+      run: |
+        args=(gate --report "$AIASEC_SARIF")
+        if [ -n "$MAX_CRITICAL" ]; then args+=(--max-critical "$MAX_CRITICAL"); fi
+        if [ -n "$MAX_HIGH" ]; then args+=(--max-high "$MAX_HIGH"); fi
+        if [ -n "$MAX_MEDIUM" ]; then args+=(--max-medium "$MAX_MEDIUM"); fi
+        if [ -n "$MAX_LOW" ]; then args+=(--max-low "$MAX_LOW"); fi
+        decision="$RUNNER_TEMP/aiasec-gate.json"
+        set +e
+        "$RUNNER_TEMP/aiasec-venv/bin/aiasec" "${args[@]}" > "$decision"
+        status=$?
+        set -e
+        cat "$decision"
+        if [ "$status" -ne 0 ]; then
+          echo "::error::aiasec gate could not read the report (exit $status)"
+          exit "$status"
+        fi
+        verdict="$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["verdict"])' "$decision")"
+        echo "verdict=$verdict" >> "$GITHUB_OUTPUT"
+        if [ "$verdict" != "PASS" ]; then
+          echo "::error::aiasec release gate: $verdict"
+          exit 1
+        fi

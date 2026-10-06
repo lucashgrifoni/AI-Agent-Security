@@ -1,0 +1,82 @@
+# Action self-test
+#
+# Runs the composite action in this repository against both reference targets. The
+# good target must pass the gate; the vulnerable target must fail it with verdict FAIL.
+# A change that breaks the action, or that makes it pass a vulnerable agent, fails here.
+#
+# Actions are pinned to commit SHAs; Dependabot refreshes them. Secrets: none.
+
+name: Action self-test
+
+on:
+  pull_request:
+    branches:
+      - master
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: action-selftest-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  good-target:
+    name: Action - good target passes
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Run aiasec
+        id: aiasec
+        uses: ./
+        with:
+          target: examples/target-mcp-good/aiasec-target.json
+
+      - name: Expect PASS
+        env:
+          VERDICT: ${{ steps.aiasec.outputs.verdict }}
+        run: test "$VERDICT" = "PASS"
+
+  vulnerable-target:
+    name: Action - vulnerable target fails
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Run aiasec
+        id: aiasec
+        continue-on-error: true
+        uses: ./
+        with:
+          target: examples/target-mcp-vulnerable/aiasec-target.json
+
+      - name: Expect the gate to fail with verdict FAIL
+        env:
+          OUTCOME: ${{ steps.aiasec.outcome }}
+          VERDICT: ${{ steps.aiasec.outputs.verdict }}
+        run: |
+          test "$OUTCOME" = "failure" || { echo "expected the action to fail, got $OUTCOME"; exit 1; }
+          test "$VERDICT" = "FAIL" || { echo "expected verdict FAIL, got '$VERDICT'"; exit 1; }
