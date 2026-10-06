@@ -2,7 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## 0.1.0 - 2026-10-06
+
+First release.
 
 - `aiasec run --response-file` with a missing file exits 2 with a usage error. It
   used to raise a traceback and exit 1, which reads as "a probe failed".
