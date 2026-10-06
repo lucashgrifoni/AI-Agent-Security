@@ -92,5 +92,9 @@ end to end; they say nothing about how a real model behaves.
 
 ## Protocol version
 
-aiasec sends `protocolVersion: "2024-11-05"` in `initialize` and does not negotiate
-another version yet. A server that rejects that version cannot be tested today.
+aiasec uses the `initialize` handshake and sends `protocolVersion: "2024-11-05"`.
+The current MCP revision, 2026-07-28, replaced the handshake with a protocol version
+declared on every request plus a `server/discover` RPC
+([MCP versioning](https://modelcontextprotocol.io/specification/versioning)). A harness
+that implements only 2026-07-28 cannot be tested yet. A harness that also accepts the
+handshake-based revisions (2025-11-25 and earlier) can.

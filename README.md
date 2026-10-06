@@ -65,6 +65,52 @@ aiasec gate --report good.sarif --max-critical 0 --max-high 0 --exit-on-fail
 config before you pass it. To test your own agent, wrap it in a harness that follows
 [docs/target-contract.md](docs/target-contract.md) and point `--target` at its config.
 
+### Use in GitHub Actions
+
+The repository is also a composite action. It installs aiasec from the commit you pin,
+sends the probes to your target, writes SARIF, and fails the job when the gate fails.
+Using the action is the opt-in to start the target command, so review the target
+config like any other code the workflow runs.
+
+```yaml
+name: Agent security regression
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  aiasec:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write   # to upload the SARIF report
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - id: aiasec
+        uses: lucashgrifoni/AI-Agent-Security@<full-commit-sha>  # pin to a commit
+        with:
+          target: path/to/aiasec-target.json
+          max-critical: "0"
+          max-high: "0"
+
+      - if: always() && steps.aiasec.outputs.sarif-file != ''
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          sarif_file: ${{ steps.aiasec.outputs.sarif-file }}
+          category: aiasec
+```
+
+Inputs: `target` (required), `probes` (default: the bundled suite), `sarif-file`
+(default `aiasec.sarif`), `max-critical` and `max-high` (default `0`), `max-medium`
+and `max-low` (default unlimited), and `python-version` (default `3.12`). Outputs:
+`sarif-file` and `verdict`. The action runs on Linux and macOS runners.
+
 ### Inspect probes
 
 ```bash
@@ -279,12 +325,12 @@ tests/                 unit and end-to-end tests
 ## Current Limits
 
 - target mode supports MCP stdio only, through the harness contract in `docs/target-contract.md`
-- the MCP client speaks protocol version `2024-11-05` only and does not negotiate newer versions
+- the MCP client uses the `initialize` handshake with protocol version `2024-11-05`. The current MCP revision, 2026-07-28, replaced that handshake with per-request version negotiation, so a server that implements only 2026-07-28 cannot be tested yet; servers that also accept the handshake-based revisions can
+- the GitHub Action does not support Windows runners (it uses a POSIX virtualenv layout)
 - each probe is a single tool call; multi-turn probes such as `crescendo-001` send all turns at once
 - no MCP HTTP adapter yet
 - no generic HTTP target adapter yet
 - no LLM-as-judge fallback yet
-- no reusable GitHub Action for consumers yet
 - SARIF output is validated against the official SARIF 2.1.0 schema in CI, not by a CLI command
 
 Sentinel detection has one inherent tradeoff worth stating: a target that
