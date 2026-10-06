@@ -1,0 +1,37 @@
+name: Feature or probe request
+description: Propose a new probe, an attack category, or an improvement to aiasec.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        aiasec is a deterministic regression testbed for agents and MCP tool boundaries.
+        It is not a runtime guardrail or a red-team orchestration framework, and it does
+        not test training data. Requests inside that scope are the easiest to accept.
+
+        To contribute a probe directly, see `docs/writing-probes.md`.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What attack or gap should aiasec detect, or what workflow is missing?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Describe the smallest useful improvement. For a probe, include the attack and how a deterministic rule would detect it.
+    validations:
+      required: true
+  - type: textarea
+    id: references
+    attributes:
+      label: References
+      description: OWASP LLM Top 10 ids, papers, advisories, or write-ups.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
