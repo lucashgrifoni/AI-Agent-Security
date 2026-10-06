@@ -1,0 +1,27 @@
+# Local assistant/workspace state: local operating context, never public surface.
+.claude/
+.cursorrules
+CLAUDE.md
+AGENTS.md
+GEMINI.md
+.aider*
+.github/copilot-instructions.md
+.vscode/
+/melhorias/
+# Local cycle status carries machine paths; it stays out of the public repo.
+/STATUS.md
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+.venv/
+.venv-*/
+dist/
+build/
+*.egg-info/
+aiasec-report.*
+.aiasec-smoke/
