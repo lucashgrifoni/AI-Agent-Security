@@ -35,6 +35,8 @@ def run_agent(inputs: list[dict[str, Any]]) -> tuple[str, list[Any]]:
     `inputs` is the conversation so far, oldest first. Each item has a `role` and a
     `content` string, `documents` (`path`, `content`, `injected`), or both:
 
+    - `system`: instructions for your agent, as its system prompt would carry them;
+      a probe may plant a secret here to test that the agent does not reveal it.
     - `user`: a user message.
     - `assistant`: your agent's own reply to an earlier turn.
     - `rag_corpus`: documents your retrieval step returned.

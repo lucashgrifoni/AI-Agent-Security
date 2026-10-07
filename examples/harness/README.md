@@ -18,10 +18,12 @@ returns the agent's reply for this turn and the tools it called:
 
 ```python
 def run_agent(inputs):
-    messages, documents, tool_results, tools = [], [], [], []
+    system, messages, documents, tool_results, tools = [], [], [], [], []
     for item in inputs:
         role = item["role"]
-        if role in ("user", "assistant"):
+        if role == "system":
+            system.append({"role": "system", "content": item.get("content", "")})
+        elif role in ("user", "assistant"):
             messages.append({"role": role, "content": item.get("content", "")})
         elif role == "rag_corpus":
             documents.extend(item.get("documents", []))
@@ -33,7 +35,7 @@ def run_agent(inputs):
             # A role that never reaches the agent lets its probes pass untested.
             raise ValueError(f"unhandled input role: {role}")
     reply, calls = my_agent.run(
-        messages, retrieved=documents, tool_results=tool_results, tools=tools
+        system + messages, retrieved=documents, tool_results=tool_results, tools=tools
     )
     return reply, [{"name": call.name, "arguments": call.arguments} for call in calls]
 ```

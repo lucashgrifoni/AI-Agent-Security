@@ -31,6 +31,9 @@ AVAILABLE_TOOLS = (
     "post_webhook",
     "open_file",
     "fetch_url",
+    "post_comment",
+    "forward_email",
+    "run_command",
 )
 
 
