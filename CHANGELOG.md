@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## 0.3.0 - 2026-10-07
+
 - `aiasec compare --baseline A.sarif --report B.sarif` reports each run's attack
   success rate (failed probes over executed probes) and its change, then compares the
   runs check by check: regressions, failing checks new since the baseline, fixed

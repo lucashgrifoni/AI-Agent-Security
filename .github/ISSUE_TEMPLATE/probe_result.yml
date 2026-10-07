@@ -52,4 +52,4 @@ body:
     id: version
     attributes:
       label: aiasec version
-      placeholder: aiasec 0.2.0
+      placeholder: aiasec 0.3.0

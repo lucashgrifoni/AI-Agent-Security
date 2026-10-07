@@ -454,16 +454,20 @@ src/aiasec/
   cli/                 Typer application
   core/                probe models, runner, verdicts, rules evaluator, release gate
   mcp/                 MCP stdio adapter, target driver, config, fixtures, and transports
-  outputs/             Markdown and SARIF renderers
+  outputs/             Markdown, SARIF and HTML renderers
   probes/              bundled probe suite, one directory per category
-examples/              harness templates, reference targets (good, vulnerable) and a tools/list fixture
-docs/                  probe authoring guide and target contract
+  httptarget.py        HTTP targets and the shared JSON POST with one deadline
+  modeltarget.py       Anthropic, OpenAI-compatible and Ollama model API targets
+  judge.py             optional, advisory LLM judge
+examples/              harness templates, reference targets (good, vulnerable), model API configs and a tools/list fixture
+docs/                  probe authoring guide, target contract, OWASP mapping and release steps
 tests/                 unit and end-to-end tests
 ```
 
 ## Current Limits
 
-- target mode supports MCP stdio and HTTP harnesses through the contract in `docs/target-contract.md`
+- target mode supports MCP stdio and HTTP harnesses through the contract in `docs/target-contract.md`, and Anthropic, OpenAI-compatible and Ollama model APIs directly
+- the model API targets were tested against local servers that imitate each provider's documented formats, not against the live APIs; they send each probe turn as one request and never execute the tool calls the model asks for, so they test the model with your prompt and tools, not your agent's own loop
 - target mode speaks both MCP eras on stdio: 2026-07-28 (per-request `_meta`, found with `server/discover`) and the `initialize`-based revisions; multi round-trip results (`input_required`) are not supported
 - the GitHub Action does not support Windows runners (it uses a POSIX virtualenv layout)
 - no MCP HTTP adapter yet
