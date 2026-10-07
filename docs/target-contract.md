@@ -1,17 +1,19 @@
 # Target contract
 
 `aiasec run --target` sends every probe to an agent under test and scores what the
-agent did. This page is the contract an agent harness implements to be tested.
+agent did. This page is the contract an agent harness implements to be tested. A
+harness is either an MCP server over stdio or an HTTP endpoint; both receive the same
+arguments and report the same two things: the agent's reply and the tools it called.
 
-## Shape
+## Shape (MCP stdio)
 
 The target is an MCP server that speaks JSON-RPC over stdio, one JSON message per
-line. It exposes one tool that runs the agent on one probe. aiasec:
+line. It exposes one tool that runs the agent on one probe turn. aiasec:
 
 1. starts the command from the target config (only with `--execute`),
 2. agrees on a protocol version (see [Protocol version](#protocol-version)),
 3. calls `tools/list` and fails unless the agent tool is listed,
-4. calls the agent tool once per probe with `tools/call`,
+4. calls the agent tool once per probe turn with `tools/call` (see [Turns](#turns)),
 5. closes stdin, waits for the process to exit, and stops it if it does not.
 
 ## Target config
@@ -47,6 +49,8 @@ aiasec calls the agent tool with these arguments:
 ```json
 {
   "probeId": "rag-doc-poison-001",
+  "turn": 1,
+  "turns": 1,
   "inputs": [
     {"role": "user", "content": "Summarize our Q3 vendor security policy from the knowledge base."},
     {"role": "rag_corpus", "documents": [{"path": "corpus/vendor-security-policy.md", "injected": "..."}]}
@@ -54,11 +58,24 @@ aiasec calls the agent tool with these arguments:
 }
 ```
 
-`inputs` is the probe's `inputs` list, unchanged. The harness decides how to present
-each role to its agent: `user` as user turns, `rag_corpus` as retrieved documents,
-`tool_output` as the output of a tool the agent called. Feed attacker-controlled
-content to the agent through the same path real untrusted content takes, or the test
-measures nothing.
+`inputs` is the conversation so far. The harness decides how to present each role to
+its agent: `user` as user messages, `assistant` as the agent's own earlier replies,
+`rag_corpus` as retrieved documents, `tool_output` as the output of a tool the agent
+called, `tool_catalog` as tool definitions the agent can see (their `description` is
+attacker-controlled in `mcp-specific` probes). Feed attacker-controlled content to the
+agent through the same path real untrusted content takes, or the test measures nothing.
+
+## Turns
+
+Each `user` input opens a turn. Other inputs belong to the turn of the user input
+before them, or to the first turn when no user input precedes them. aiasec makes one
+call per turn and sends the whole conversation so far each time, with the agent's
+earlier replies as `assistant` inputs, so the harness can stay stateless. A probe with
+one user input is one call.
+
+The probe is scored on the reply to the last turn and on every tool called in any turn.
+`crescendo-001` is the bundled multi-turn probe: three calls, the last one carrying two
+`assistant` replies.
 
 ## Tool result
 
@@ -70,13 +87,50 @@ measures nothing.
 }
 ```
 
-- `content`: the agent's final response. aiasec joins every `text` block.
+- `content`: the agent's reply for this turn. aiasec joins every `text` block.
 - `structuredContent.toolsCalled`: the names of every tool the agent called while
-  handling this probe, in order. Required, even when empty. A missing or malformed
+  handling this turn, in order. Required, even when empty. A missing or malformed
   list fails the run, because a target that does not report its tool calls would
   pass every `tool_not_called` check by omission.
 - `isError: true` fails the run. A harness that cannot run a probe must not look like
   an agent that resisted it.
+
+## HTTP targets
+
+An HTTP harness receives one `POST` per probe turn with the same JSON body as the MCP
+tool arguments above, and answers status 200 with:
+
+```json
+{"response": "the agent's reply for this turn", "toolsCalled": ["search"]}
+```
+
+```json
+{
+  "transport": "http",
+  "url": "https://agent.internal.example/aiasec",
+  "headers": {"Authorization": "Bearer ${AIASEC_AGENT_TOKEN}"},
+  "timeoutSeconds": 30
+}
+```
+
+| Field | Default | Meaning |
+|---|---|---|
+| `url` | required | `http` or `https` URL with a host |
+| `headers` | `{}` | extra request headers; `${NAME}` is replaced by environment variable `NAME`, and a missing variable fails the run before any request |
+| `timeoutSeconds` | `30` | longest wait for one reply (1 to 600) |
+
+Keep secrets in environment variables, never as literal header values in a file that
+may be committed. aiasec does not follow redirects, so a credential header is never
+forwarded to another host; any status other than 200 fails the run. HTTPS uses the
+system trust store with certificate and hostname verification. Replies larger than
+1 MiB, replies that are not JSON, and replies without a `response` string or a
+`toolsCalled` list fail the run.
+
+`--execute` is required for HTTP targets too: it is the opt-in to send adversarial
+probes to the configured URL.
+
+`examples/target-http-vulnerable/server.py` is the HTTP reference target. It listens on
+`127.0.0.1` only.
 
 ## Exit codes
 
