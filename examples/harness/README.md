@@ -20,7 +20,9 @@ returns the agent's reply for this turn and the tools it called:
 def run_agent(inputs):
     messages, documents, tool_results = [], [], []
     for item in inputs:
-        if item["role"] in ("user", "assistant"):
+        if item["role"] == "system":
+            messages.insert(0, {"role": "system", "content": item.get("content", "")})
+        elif item["role"] in ("user", "assistant"):
             messages.append({"role": item["role"], "content": item.get("content", "")})
         elif item["role"] == "rag_corpus":
             documents.extend(item.get("documents", []))

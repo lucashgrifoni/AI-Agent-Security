@@ -6,7 +6,7 @@
 
 `aiasec` is a small, reproducible testbed for adversarial regression checks against AI agents and MCP tool boundaries. It sends a battery of adversarial probes to your agent, scores each response with deterministic rules, and writes a SARIF report that a release gate turns into PASS or FAIL in CI.
 
-- 17 bundled probes across 7 attack categories, defined in YAML and mapped to OWASP
+- 22 bundled probes across 7 attack categories, defined in YAML and mapped to OWASP
 - deterministic, rules-only evaluation: no LLM judges the result
 - a live target mode that sends every probe to the agent under test over MCP stdio or HTTP
 - Markdown and SARIF 2.1.0 reports that GitHub code scanning can display
@@ -196,15 +196,15 @@ and deduplicate them.
 
 ## Probe Suite
 
-Seventeen bundled probes covering seven categories:
+Twenty-two bundled probes covering seven categories:
 
 | Category | Probes | OWASP LLM 2025 | OWASP MCP 2025 (beta) |
 |---|---|---|---|
 | `prompt-injection` | `direct-injection-001`, `encoding-injection-001` | LLM01 | |
-| `indirect-injection` | `rag-doc-poison-001`, `hidden-html-injection-001` | LLM01 | MCP06 |
+| `indirect-injection` | `rag-doc-poison-001`, `hidden-html-injection-001`, `issue-comment-injection-001`, `email-injection-001`, `malformed-json-injection-001` | LLM01 | MCP06 |
 | `tool-abuse` | `tool-coercion-001`, `tool-chain-exfil-001`, `tool-argument-traversal-001` | LLM06 | MCP06 |
-| `data-exfil` | `markdown-image-exfil-001`, `url-embed-exfil-001`, `tool-argument-exfil-001` | LLM02 | MCP06 |
-| `jailbreak` | `persona-swap-001`, `crescendo-001` | LLM01 | |
+| `data-exfil` | `markdown-image-exfil-001`, `url-embed-exfil-001`, `tool-argument-exfil-001`, `system-prompt-leak-001` | LLM02, LLM07 | MCP06 |
+| `jailbreak` | `persona-swap-001`, `crescendo-001`, `many-shot-001` | LLM01 | |
 | `output-manipulation` | `html-script-output-001`, `sql-payload-output-001`, `shell-payload-output-001` | LLM05 | |
 | `mcp-specific` | `tool-description-poisoning-001`, `tool-shadowing-001` | LLM01, LLM06 | MCP03 |
 

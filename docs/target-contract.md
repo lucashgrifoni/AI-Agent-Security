@@ -59,7 +59,9 @@ aiasec calls the agent tool with these arguments:
 ```
 
 `inputs` is the conversation so far. The harness decides how to present each role to
-its agent: `user` as user messages, `assistant` as the agent's own earlier replies,
+its agent: `system` as part of the agent's system prompt (a probe may plant a secret
+there to test that the agent keeps it), `user` as user messages, `assistant` as the
+agent's own earlier replies,
 `rag_corpus` as retrieved documents, `tool_output` as the output of a tool the agent
 called, `tool_catalog` as tool definitions the agent can see (their `description` is
 attacker-controlled in `mcp-specific` probes). Feed attacker-controlled content to the
