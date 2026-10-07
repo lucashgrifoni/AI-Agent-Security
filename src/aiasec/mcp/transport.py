@@ -119,12 +119,12 @@ class LineJsonRpcTransport:
         if timeout is None:
             self._write(line)
             return
-        failure: list[McpTransportError] = []
+        failure: list[BaseException] = []
 
         def write() -> None:
             try:
                 self._write(line)
-            except McpTransportError as exc:
+            except BaseException as exc:  # noqa: BLE001 - any failure is raised by send() below
                 failure.append(exc)
 
         writer = threading.Thread(target=write, daemon=True)
@@ -141,7 +141,7 @@ class LineJsonRpcTransport:
         try:
             self._writer.write(line)
             self._writer.flush()
-        except OSError as exc:
+        except (OSError, ValueError) as exc:  # ValueError: the stream is already closed
             raise McpTransportError("Unable to write JSON-RPC message to transport") from exc
 
     def _write_in_flight(self) -> bool:

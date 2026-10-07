@@ -202,6 +202,17 @@ def test_a_flooding_peer_cannot_fill_memory() -> None:
     assert transport._lines.qsize() <= 1024
 
 
+@pytest.mark.parametrize("timeout", [None, 1.0])
+def test_a_write_to_a_closed_stream_fails_the_send(timeout: float | None) -> None:
+    writer = io.StringIO()
+    writer.close()
+    transport = LineJsonRpcTransport(reader=io.StringIO(), writer=writer)
+
+    # A send that did not happen must never look like one that did.
+    with pytest.raises(McpTransportError, match="Unable to write"):
+        transport.send({"jsonrpc": "2.0", "method": "ping"}, timeout=timeout)
+
+
 def test_queued_messages_have_a_small_total_budget() -> None:
     from aiasec.mcp import transport
 
