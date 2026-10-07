@@ -85,6 +85,8 @@ runs:
       run: |
         args=(run --target "$AIASEC_TARGET" --execute --output "$AIASEC_SARIF" --format sarif)
         if [ -n "$AIASEC_PROBES" ]; then args+=(--probes "$AIASEC_PROBES"); fi
+        # A report left by an earlier run must never stand in for this one.
+        rm -f -- "$AIASEC_SARIF"
         set +e
         "$RUNNER_TEMP/aiasec-venv/bin/aiasec" "${args[@]}"
         status=$?
@@ -93,6 +95,11 @@ runs:
         if [ "$status" -ne 0 ] && [ "$status" -ne 1 ]; then
           echo "::error::aiasec run failed with exit code $status"
           exit "$status"
+        fi
+        # An unexpected crash also exits 1; only a report this run wrote means findings.
+        if ! test -s "$AIASEC_SARIF"; then
+          echo "::error::aiasec run exited $status without writing $AIASEC_SARIF"
+          exit 2
         fi
         echo "sarif-file=$AIASEC_SARIF" >> "$GITHUB_OUTPUT"
 

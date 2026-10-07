@@ -13,6 +13,7 @@ server, any other error or silence means a legacy one.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal, cast
@@ -33,9 +34,11 @@ META_CLIENT_INFO = "io.modelcontextprotocol/clientInfo"
 META_CLIENT_CAPABILITIES = "io.modelcontextprotocol/clientCapabilities"
 
 UNSUPPORTED_PROTOCOL_VERSION = -32022
-# -32020..-32099 is reserved for errors the MCP spec defines; only a modern server
-# can return one. Anything else in reply to the probe identifies a legacy server.
-MODERN_ERROR_CODES = range(-32099, -32019)
+# The errors MCP 2026-07-28 defines: header mismatch, missing required client
+# capability, unsupported protocol version. The rest of -32020..-32099 is reserved,
+# and earlier revisions took codes from it too (2025-11-25 defines -32042), so an
+# unrecognized code there does not identify a modern server and leads to the fallback.
+MODERN_ERROR_CODES = frozenset({-32020, -32021, UNSUPPORTED_PROTOCOL_VERSION})
 DEFAULT_PROBE_TIMEOUT_SECONDS = 5.0
 
 Era = Literal["modern", "legacy"]
@@ -67,10 +70,19 @@ class McpSession:
 class McpStdioAdapter:
     """Small MCP adapter that speaks JSON-RPC through an injected transport."""
 
-    def __init__(self, transport: JsonRpcTransport, *, first_request_id: int = 1) -> None:
+    def __init__(
+        self,
+        transport: JsonRpcTransport,
+        *,
+        first_request_id: int = 1,
+        request_timeout: float | None = None,
+    ) -> None:
         if first_request_id < 1:
             raise ValueError("first_request_id must be positive")
+        if request_timeout is not None and request_timeout <= 0:
+            raise ValueError("request_timeout must be positive")
         self._transport = transport
+        self._request_timeout = request_timeout
         self._next_request_id = first_request_id
         self._abandoned_ids: set[int] = set()
         self._client_info: JsonObject = {"name": "aiasec", "version": __version__}
@@ -171,12 +183,16 @@ class McpStdioAdapter:
         """Send one JSON-RPC request and wait for its matching response.
 
         On a modern session every request carries the per-request ``_meta`` fields.
+        With a ``request_timeout``, the response must arrive within that many seconds
+        of sending the request.
         """
 
         meta_version = None
         if self.session is not None and self.session.era == "modern":
             meta_version = self.session.protocol_version
-        return self._exchange(method, params, meta_version=meta_version)
+        return self._exchange(
+            method, params, meta_version=meta_version, timeout=self._request_timeout
+        )
 
     def notify(self, method: str, params: Mapping[str, Any] | None = None) -> None:
         """Send one JSON-RPC notification without waiting for a response."""
@@ -254,11 +270,20 @@ class McpStdioAdapter:
         return meta
 
     def _receive_response(self, expected_id: int, timeout: float | None) -> Any:
+        # One deadline for the whole exchange: a notification or a late reply to an
+        # abandoned request does not restart it, so a chatty peer cannot hold the
+        # request open forever.
+        deadline = None if timeout is None else time.monotonic() + timeout
         while True:
-            if timeout is None:
+            if deadline is None:
                 response = self._transport.receive()
             else:
-                response = self._transport.receive(timeout=timeout)  # type: ignore[call-arg]
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise McpTransportTimeout(
+                        f"Target did not answer request {expected_id} within {timeout} seconds"
+                    )
+                response = self._transport.receive(timeout=remaining)
             if _is_peer_notification(response):
                 continue
             if response.get("id") in self._abandoned_ids:

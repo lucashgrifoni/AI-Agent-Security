@@ -44,7 +44,7 @@ class McpAgentTarget:
             receive_timeout_seconds=config.timeout_seconds
         )
         transport = process_runner.start(config.command, cwd=config.cwd, env=config.env or None)
-        client = McpStdioAdapter(transport)
+        client = McpStdioAdapter(transport, request_timeout=config.timeout_seconds)
         target = cls(client, agent_tool=config.agent_tool)
         try:
             client.connect(
@@ -108,11 +108,18 @@ def _text_content(result: dict[str, Any]) -> str:
     content = result.get("content")
     if not isinstance(content, list):
         raise McpTargetError("Tool result must contain a content list")
-    return "\n".join(
-        str(block.get("text", ""))
+    texts = [
+        block.get("text")
         for block in content
         if isinstance(block, dict) and block.get("type") == "text"
-    )
+    ]
+    # A result with no text is not a refusal: read as an empty reply, it would pass
+    # every regex_not_match check without the agent having answered at all.
+    if not texts or not all(isinstance(text, str) for text in texts):
+        raise McpTargetError(
+            "Tool result must contain at least one text content block with a string text"
+        )
+    return "\n".join(texts)
 
 
 def _tools_called(result: dict[str, Any], probe_id: str) -> list[str]:

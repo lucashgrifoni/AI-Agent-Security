@@ -270,8 +270,13 @@ def run(
     else:
         report = render_markdown(results, observation_mode=observation_mode)
 
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(report, encoding="utf-8")
+    try:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(report, encoding="utf-8")
+    except OSError as exc:
+        # Exit 1 means "a probe failed"; a report that was never written is a broken run.
+        typer.echo(f"Could not write the report to {output}: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
 
     failed = sum(1 for result in results if not result.passed)
     typer.echo(f"Wrote {output} with {failed} failed probe(s).")

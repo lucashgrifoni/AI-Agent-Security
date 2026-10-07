@@ -52,7 +52,8 @@ Note the quoting of `"on":` — `on` is a YAML boolean-like key and must be quot
 
 ### Inputs
 
-`inputs` documents the adversarial scenario. Each input has a `role` and either
+`inputs` documents the adversarial scenario and must not be empty: a probe with no
+inputs would send the target nothing and pass. Each input has a `role` and either
 `content` (a string) or `documents` (for indirect-injection / RAG scenarios):
 
 ```yaml

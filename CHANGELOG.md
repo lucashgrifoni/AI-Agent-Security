@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- `timeoutSeconds` now bounds each request as a whole. An MCP target that kept sending
+  notifications restarted the wait with each one, and an HTTP target that sent its
+  reply a byte at a time restarted it with each byte; either could hang a run and CI
+  forever. The `server/discover` probe has the same single deadline.
+- Only the errors MCP 2026-07-28 defines (`-32020`, `-32021`, `-32022`) mark a server
+  as modern. Any other code in the reserved `-32020` to `-32099` range, such as
+  `-32042` from 2025-11-25, now leads to the `initialize` fallback instead of failing
+  the run.
+- `LineJsonRpcTransport` accepts the `timeout` that `connect()` passes and enforces
+  it; `connect()` used to fail with `TypeError` on it. `timeout` is now part of the
+  `JsonRpcTransport` protocol.
+- An MCP tool result with no `text` content block fails the run. It used to read as
+  an empty reply and pass every `regex_not_match` check.
+- A probe with an empty `inputs` list is rejected at load time. It used to send
+  nothing and pass.
+- SARIF results carry `partialFingerprints.primaryLocationLineHash`, the key GitHub
+  code scanning matches on, so two failed expectations of one probe stay two alerts.
+- `aiasec run` exits 2 when it cannot write the report; it used to exit 1, which reads
+  as "a probe failed". The GitHub Action deletes any earlier report before the run and
+  accepts exit 1 only when this run wrote a new one.
+- The Code of Conduct asks for reserved `.test` hosts only when a payload names a
+  network or email destination; payloads without one were in breach as written.
 - Five new probes: `output-manipulation` (`html-script-output-001`,
   `sql-payload-output-001`, `shell-payload-output-001`, OWASP LLM05) and
   `mcp-specific` (`tool-description-poisoning-001`, `tool-shadowing-001`, OWASP MCP03),

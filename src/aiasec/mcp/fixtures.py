@@ -23,8 +23,8 @@ class QueuedJsonRpcTransport:
 
         self.sent.append(message)
 
-    def receive(self) -> JsonObject:
-        """Return the next queued JSON-RPC response."""
+    def receive(self, timeout: float | None = None) -> JsonObject:
+        """Return the next queued JSON-RPC response; queued replies never wait."""
 
         if not self.incoming:
             raise McpTransportError("Fixture did not contain enough JSON-RPC responses")

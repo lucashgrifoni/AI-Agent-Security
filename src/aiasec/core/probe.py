@@ -79,6 +79,15 @@ class Probe(BaseModel):
             raise ValueError("value must not be empty")
         return value
 
+    @field_validator("inputs")
+    @classmethod
+    def require_inputs(cls, value: list[ProbeInput]) -> list[ProbeInput]:
+        """A probe with no inputs sends the target nothing, so its checks would pass."""
+
+        if not value:
+            raise ValueError("probe must define at least one input")
+        return value
+
     @field_validator("expectations")
     @classmethod
     def require_expectations(cls, value: list[ProbeExpectation]) -> list[ProbeExpectation]:

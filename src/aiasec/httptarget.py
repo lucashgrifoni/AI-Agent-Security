@@ -14,7 +14,11 @@ import http.client
 import json
 import os
 import re
+import socket
 import ssl
+import threading
+import time
+from contextlib import suppress
 from types import TracebackType
 from typing import Any, Literal
 from urllib.parse import urlsplit
@@ -117,19 +121,35 @@ class HttpAgentTarget:
             "User-Agent": f"aiasec/{__version__}",
             **self._headers,
         }
+        timeout = self._config.timeout_seconds
+        deadline = time.monotonic() + timeout
+        expired = threading.Event()
+        watchdog: threading.Timer | None = None
         connection = self._connection()
         try:
+            connection.connect()
+            # The socket timeout bounds each read, not the reply: a target that sends a
+            # byte just inside it would never time out. At the deadline the watchdog shuts
+            # the socket down, which ends whatever read is in progress.
+            watchdog = threading.Timer(
+                max(deadline - time.monotonic(), 0.0), _expire, (connection.sock, expired)
+            )
+            watchdog.start()
             connection.request("POST", self._path, body=body, headers=headers)
             response = connection.getresponse()
             payload = response.read(MAX_RESPONSE_BYTES + 1)
-        except TimeoutError as exc:
-            timeout = self._config.timeout_seconds
-            raise HttpTargetError(f"Target timed out after {timeout} s") from exc
         except (OSError, http.client.HTTPException) as exc:
+            if expired.is_set() or isinstance(exc, TimeoutError):
+                raise HttpTargetError(f"Target timed out after {timeout} s") from exc
             raise HttpTargetError(f"HTTP request to the target failed: {exc}") from exc
         finally:
+            if watchdog is not None:
+                watchdog.cancel()
             connection.close()
 
+        # A reply cut short by the watchdog can read as complete, so check the flag too.
+        if expired.is_set():
+            raise HttpTargetError(f"Target timed out after {timeout} s")
         if response.status != 200:
             raise HttpTargetError(
                 f"Target answered HTTP {response.status} for probe {probe_id}; aiasec expects 200 "
@@ -149,6 +169,13 @@ class HttpAgentTarget:
                 self._host, self._port, timeout=timeout, context=ssl.create_default_context()
             )
         return http.client.HTTPConnection(self._host, self._port, timeout=timeout)
+
+
+def _expire(sock: socket.socket | None, expired: threading.Event) -> None:
+    expired.set()
+    if sock is not None:
+        with suppress(OSError):
+            sock.shutdown(socket.SHUT_RDWR)
 
 
 def _expand(value: str) -> str:
