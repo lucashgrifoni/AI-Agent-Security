@@ -46,7 +46,10 @@ PROVIDERS: dict[str, tuple[str, str | None]] = {
     "ollama": ("http://127.0.0.1:11434/api/chat", None),
 }
 ANTHROPIC_VERSION = "2023-06-01"
-TOOL_NAME = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+TOOL_NAME = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+# Longest tool name each API accepts: Anthropic 128, OpenAI 64. Ollama documents no
+# limit and keeps OpenAI's.
+TOOL_NAME_LIMIT: dict[str, int] = {"anthropic": 128, "openai": 64, "ollama": 64}
 DEFAULT_TOOL = "read_document"
 # The result replayed for a tool call the model made on an earlier turn.
 NOT_RUN = "aiasec did not run this tool: it records tool calls without running them."
@@ -104,6 +107,17 @@ class ModelTargetConfig(BaseModel):
         parts = urlsplit(self.endpoint)
         if self.key_variable and parts.scheme == "http" and not _is_loopback(parts.hostname or ""):
             raise ValueError("url uses http to another host; the API key would travel unencrypted")
+        return self
+
+    @model_validator(mode="after")
+    def fit_tool_names_to_the_provider(self) -> ModelTargetConfig:
+        limit = TOOL_NAME_LIMIT[self.transport]
+        for index, tool in enumerate(self.tools):
+            if len(tool.name) > limit:
+                raise ValueError(
+                    f"tools[{index}].name is longer than the {limit} characters "
+                    f"the {self.transport} API accepts"
+                )
         return self
 
     @property
@@ -293,7 +307,7 @@ def build_transcript(
             text = "Retrieved documents:\n\n" + _documents_text(documents)
             entries.append({"kind": "user", "text": text})
         elif role == "tool_output":
-            name = _tool_name_from_path(documents)
+            name = _tool_name_from_path(documents, config.transport)
             tools.setdefault(name, ModelTool(name=name, description="Returns requested content."))
             call_id = f"aiasec_call_{len(entries) + 1}"
             text = "\n\n".join(filter(None, [content, _documents_text(documents)]))
@@ -301,7 +315,7 @@ def build_transcript(
             entries.append({"kind": "result", "id": call_id, "name": name, "text": text})
         elif role == "tool_catalog":
             for document in documents:
-                name = _last_path_segment(document.get("path") or "")
+                name = _last_path_segment(document.get("path") or "", config.transport)
                 description = " ".join(
                     filter(None, [document.get("content"), document.get("injected")])
                 )
@@ -331,17 +345,23 @@ def _documents_text(documents: list[dict[str, Any]]) -> str:
     return "\n\n".join(parts)
 
 
-def _tool_name_from_path(documents: list[dict[str, Any]]) -> str:
+def _fits(name: str, provider: str) -> bool:
+    """Whether the provider's API accepts this tool name."""
+
+    return bool(TOOL_NAME.match(name)) and len(name) <= TOOL_NAME_LIMIT[provider]
+
+
+def _tool_name_from_path(documents: list[dict[str, Any]], provider: str) -> str:
     for document in documents:
         parts = urlsplit(document.get("path") or "")
-        if parts.scheme == "tool" and TOOL_NAME.match(parts.netloc):
+        if parts.scheme == "tool" and _fits(parts.netloc, provider):
             return parts.netloc
     return DEFAULT_TOOL
 
 
-def _last_path_segment(path: str) -> str:
+def _last_path_segment(path: str, provider: str) -> str:
     segment = path.rstrip("/").rsplit("/", 1)[-1]
-    return segment if TOOL_NAME.match(segment) else DEFAULT_TOOL
+    return segment if _fits(segment, provider) else DEFAULT_TOOL
 
 
 def _is_loopback(host: str) -> bool:

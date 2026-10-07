@@ -22,7 +22,12 @@ from aiasec.cli.app import app
 from aiasec.core.evaluator.rules import evaluate_probe
 from aiasec.core.probe import Probe, load_probe_file, load_probes_from_dir
 from aiasec.core.runner import run_probes_against
-from aiasec.modeltarget import ModelAgentTarget, ModelTargetConfig, ModelTargetError
+from aiasec.modeltarget import (
+    ModelAgentTarget,
+    ModelTargetConfig,
+    ModelTargetError,
+    build_transcript,
+)
 
 PROBES = Path("src/aiasec/probes")
 # Made at run time: a key-shaped literal in the repository trips secret scanners.
@@ -469,6 +474,47 @@ def test_a_transport_that_is_not_a_string_is_a_config_error(tmp_path: Path, tran
 
     assert result.exit_code == 2
     assert "Invalid target config" in result.output
+
+
+LONG_NAME = "lookup_" + "x" * 93  # 100 characters
+
+
+@pytest.mark.parametrize(("provider", "accepted"), [
+    ("anthropic", True), ("openai", False), ("ollama", False),
+])  # fmt: skip
+def test_a_tool_name_fits_the_provider_limit(provider: str, accepted: bool) -> None:
+    # Anthropic accepts names up to 128 characters, OpenAI up to 64.
+    values = {"transport": provider, "model": "m", "apiKeyEnv": None,
+              "tools": [{"name": LONG_NAME}]}  # fmt: skip
+
+    if accepted:
+        assert ModelTargetConfig.model_validate(values).tools[0].name == LONG_NAME
+    else:
+        with pytest.raises(ValidationError, match="64 characters"):
+            ModelTargetConfig.model_validate(values)
+
+
+def test_no_provider_takes_a_tool_name_over_128_characters() -> None:
+    values = {"transport": "anthropic", "model": "m", "tools": [{"name": "x" * 129}]}
+
+    with pytest.raises(ValidationError):
+        ModelTargetConfig.model_validate(values)
+
+
+@pytest.mark.parametrize(("provider", "expected"), [
+    ("anthropic", LONG_NAME), ("openai", "read_document"),
+])  # fmt: skip
+def test_a_tool_named_by_a_document_path_fits_the_provider(provider: str, expected: str) -> None:
+    config = ModelTargetConfig.model_validate({"transport": provider, "model": "m"})
+    inputs = [
+        {"role": "tool_output", "documents": [{"path": f"tool://{LONG_NAME}/1", "content": "x"}]},
+        {"role": "tool_catalog", "documents": [{"path": f"mcp://server/{LONG_NAME}"}]},
+        {"role": "user", "content": "Go on."},
+    ]
+
+    transcript = build_transcript(inputs, config)
+
+    assert [tool.name for tool in transcript.tools] == [expected]
 
 
 def test_an_openai_refusal_field_is_the_reply(serve, monkeypatch) -> None:
