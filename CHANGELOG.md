@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+- Copyable harness templates in `examples/harness` (MCP stdio and HTTP, standard
+  library only) put your own agent behind the target contract: replace `run_agent`
+  and point a target config at it. An unconnected template makes `aiasec run` exit 2
+  rather than pass. The reference targets now run on these templates, with their two
+  agents in `examples/reference_agents.py` instead of three copies.
+
 ## 0.2.0 - 2026-10-07
 
 - `timeoutSeconds` now bounds each request as a whole. An MCP target that kept sending
