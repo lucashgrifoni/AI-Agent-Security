@@ -193,12 +193,42 @@ tell "nothing failed" from "nothing ran". A report that does not record how many
 probes were executed, or records zero, exits 2, as does an unreadable report or a
 result whose severity cannot be determined.
 
+### Compare runs
+
+Keep the SARIF report of a run as a baseline and compare the next run against it:
+
+```bash
+aiasec compare --baseline last-release.sarif --report aiasec.sarif --exit-on-regression
+```
+
+The output gives each run's attack success rate (failed probes divided by executed
+probes) and the change, then lists what differs, finding by finding (a probe and one
+of its expectations):
+
+- `regressions`: findings the baseline did not have, for probes it ran;
+- `newProbeFindings`: findings of probes the baseline did not run, such as probes
+  added to the suite since;
+- `fixed`: baseline findings that are gone, for probes this run ran;
+- `notRun`: probes the baseline ran and this run did not.
+
+The verdict is `REGRESSION` when either of the first two lists is not empty. When
+only `notRun` is not empty, the verdict is `INCOMPLETE`, because a probe that did not
+run cannot show a regression; pass `--allow-partial` to accept the smaller run.
+`--exit-on-regression` exits 1 unless the verdict is `NO REGRESSION`. Reports
+written before aiasec 0.3 do not record which probes ran, so they cannot be compared
+(exit 2).
+
+A model that samples its replies can fail a probe in one run and pass it in the next.
+Compare runs made with the same model settings, at temperature 0 where the model
+allows it.
+
 Exit codes:
 
 | Command | 0 | 1 | 2 |
 |---|---|---|---|
 | `aiasec run` | no probe failed | at least one probe failed | bad input: no probes found, invalid probe, unreadable file |
 | `aiasec gate` | `PASS`, or `FAIL` without `--exit-on-fail` | `FAIL` with `--exit-on-fail` | unreadable report, or no executed probes recorded |
+| `aiasec compare` | no regression, or any verdict without `--exit-on-regression` | `REGRESSION`, or `INCOMPLETE` without `--allow-partial`, with `--exit-on-regression` | unreadable report, or one that does not record which probes ran |
 
 SARIF results point at the probe file that defines the failed expectation and
 carry a stable `partialFingerprints` entry, so GitHub code scanning can display

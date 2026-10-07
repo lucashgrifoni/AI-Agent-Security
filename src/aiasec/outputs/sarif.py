@@ -32,6 +32,8 @@ def render_sarif(
     run_properties: dict[str, Any] = {
         "probesExecuted": len(results),
         "probesFailed": sum(1 for result in results if not result.passed),
+        # Which probes ran, so a later report can be compared with this one.
+        "executedProbes": [result.probe.id for result in results],
         "observationMode": observation_mode,
     }
     # The gate only sees counts; a run limited to a subset of the suite must say so.

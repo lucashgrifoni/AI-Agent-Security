@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- `aiasec compare --baseline A.sarif --report B.sarif` reports each run's attack
+  success rate (failed probes over executed probes) and its change, the findings that
+  are new for probes the baseline ran (regressions), findings of probes new to the
+  suite, fixed findings, and probes the baseline ran that this run did not.
+  `--exit-on-regression` exits 1 on a regression, and on lost coverage unless
+  `--allow-partial`. SARIF run properties now list `executedProbes`.
 - The composite action installs aiasec's dependencies from a hash-locked file in its
   own checkout (`.github/requirements/action.txt`), so pinning the action to a commit
   also pins every package it installs. It used to install the newest releases that

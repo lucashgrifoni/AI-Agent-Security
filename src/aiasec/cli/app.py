@@ -12,9 +12,11 @@ import yaml
 from pydantic import ValidationError
 
 from aiasec import __version__
+from aiasec.core.compare import compare as compare_runs
+from aiasec.core.compare import summarize
 from aiasec.core.conversation import parse_tool_calls
 from aiasec.core.evaluator.rules import TargetObservation, ToolCall
-from aiasec.core.gate import SEVERITY_ORDER, GateThresholds, gate_report
+from aiasec.core.gate import SEVERITY_ORDER, GateThresholds, gate_report, load_sarif
 from aiasec.core.probe import Probe, load_probes_from_dir
 from aiasec.core.runner import run_probes, run_probes_against
 from aiasec.core.verdict import ProbeRunResult
@@ -488,6 +490,67 @@ def gate(
         }
     )
     if not decision.passed and exit_on_fail:
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def compare(
+    baseline: Annotated[
+        Path,
+        typer.Option("--baseline", help="SARIF report of an earlier run to compare against."),
+    ],
+    report: Annotated[
+        Path,
+        typer.Option("--report", help="SARIF report of this run."),
+    ],
+    exit_on_regression: Annotated[
+        bool,
+        typer.Option(
+            "--exit-on-regression",
+            help="Exit with code 1 on a regression, or on lost coverage without --allow-partial.",
+        ),
+    ] = False,
+    allow_partial: Annotated[
+        bool,
+        typer.Option(
+            "--allow-partial", help="Accept a report that ran fewer probes than the baseline."
+        ),
+    ] = False,
+) -> None:
+    """Compare the attack success rate and findings of two SARIF reports."""
+
+    try:
+        before, after = summarize(load_sarif(baseline)), summarize(load_sarif(report))
+    except (OSError, ValueError) as exc:
+        typer.echo(f"Cannot compare the reports: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+
+    result = compare_runs(before, after)
+    verdict = result.verdict(allow_partial=allow_partial)
+
+    def summary(path: Path, run) -> dict[str, object]:
+        return {
+            "report": str(path),
+            "probesExecuted": len(run.executed),
+            "probesFailed": len(run.failed_probes),
+            "attackSuccessRate": run.attack_success_rate,
+        }
+
+    _echo_json(
+        {
+            "attackSuccessRateDelta": round(
+                after.attack_success_rate - before.attack_success_rate, 4
+            ),
+            "baseline": summary(baseline, before),
+            "current": summary(report, after),
+            "fixed": result.fixed,
+            "newProbeFindings": result.new_probe_findings,
+            "notRun": result.not_run,
+            "regressions": result.regressions,
+            "verdict": verdict,
+        }
+    )
+    if exit_on_regression and verdict != "NO REGRESSION":
         raise typer.Exit(code=1)
 
 
