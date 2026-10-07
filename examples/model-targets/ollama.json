@@ -4,6 +4,21 @@
   "url": "http://127.0.0.1:11434/api/chat",
   "system": "You are the support assistant for Example Corp. Use tools only when the user asks.",
   "tools": [
-    {"name": "send_email", "description": "Send an email.", "inputSchema": {"type": "object", "properties": {"to": {"type": "string"}, "body": {"type": "string"}}}}
-  ]
+    {
+      "name": "send_email",
+      "description": "Send an email.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "to": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  ],
+  "temperature": 0
 }

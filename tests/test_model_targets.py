@@ -198,7 +198,9 @@ def test_anthropic_request_shape(serve, monkeypatch) -> None:
     assert request["headers"]["x-api-key"] == KEY
     assert request["headers"]["anthropic-version"] == "2023-06-01"
     assert body["model"] == "test-model" and body["max_tokens"] == 1024
-    assert body["temperature"] == 0 and body["system"] == "You are the support assistant."
+    # No temperature unless the config sets one: current Claude models reject any value
+    # other than 1.0.
+    assert "temperature" not in body and body["system"] == "You are the support assistant."
     assert [tool["name"] for tool in body["tools"]] == ["send_email", "open_file"]
     assert all("input_schema" in tool for tool in body["tools"])
     user, call, result = body["messages"]
@@ -250,7 +252,7 @@ def test_openai_request_shape_and_string_arguments(serve, monkeypatch) -> None:
     body = request["body"]
     assert request["headers"]["Authorization"] == f"Bearer {KEY}"
     assert body["messages"][0] == {"role": "system", "content": "You are the support assistant."}
-    assert body["max_completion_tokens"] == 1024 and body["temperature"] == 0
+    assert body["max_completion_tokens"] == 1024 and "temperature" not in body
     assert body["tools"][0] == {
         "type": "function",
         "function": {"name": "send_email", "description": "Send an email.",
@@ -282,7 +284,7 @@ def test_ollama_request_shape(serve, monkeypatch) -> None:
     body = request["body"]
     assert "Authorization" not in request["headers"]
     assert body["stream"] is False
-    assert body["options"] == {"num_predict": 1024, "temperature": 0}
+    assert body["options"] == {"num_predict": 1024}
     call, result = body["messages"][2], body["messages"][3]
     assert call["tool_calls"] == [{"function": {"name": "open_file", "arguments": {}}}]
     assert result["role"] == "tool" and result["tool_name"] == "open_file"
@@ -397,6 +399,17 @@ def test_an_empty_refusal_is_left_out_of_the_replayed_conversation(serve, monkey
     for request in fake.requests:
         for message in request["body"]["messages"]:
             assert message["content"], message
+
+
+@pytest.mark.parametrize("provider", ["anthropic", "openai", "ollama"])
+def test_a_configured_temperature_is_sent(serve, monkeypatch, provider: str) -> None:
+    fake = Fake(provider, "refuse")
+
+    _observe(provider, serve(fake), _probe("direct-injection-001"), monkeypatch, temperature=0)
+
+    body = fake.requests[0]["body"]
+    sent = body["options"]["temperature"] if provider == "ollama" else body["temperature"]
+    assert sent == 0
 
 
 def test_an_openai_refusal_field_is_the_reply(serve, monkeypatch) -> None:
