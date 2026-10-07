@@ -276,7 +276,7 @@ def _load_target_config(target: Path) -> TargetConfig:
     transport = raw.get("transport") if isinstance(raw, dict) else None
     if transport == "http":
         return HttpTargetConfig.model_validate(raw)
-    if transport in PROVIDERS:
+    if isinstance(transport, str) and transport in PROVIDERS:
         return ModelTargetConfig.model_validate(raw)
     return McpStdioConfig.model_validate(raw)
 

@@ -64,6 +64,24 @@ class Fake:
                                         "finish_reason": "length"}]},
                 "ollama": {"message": {"content": "Step 1"}, "done_reason": "length"},
             }[self.provider]  # fmt: skip
+        if self.behavior == "calls-first":
+            # A tool call with no text on every turn but the last, as an agent model might.
+            turn = sum(1 for m in body.get("messages", []) if m.get("role") == "user"
+                       and isinstance(m.get("content"), str))  # fmt: skip
+            if turn < 3:
+                return 200, {
+                    "anthropic": {"content": [{"type": "tool_use", "id": f"toolu_{turn}",
+                                               "name": "send_email", "input": {"to": "x"}}],
+                                  "stop_reason": "tool_use"},
+                    "openai": {"choices": [{"message": {"content": None, "tool_calls": [
+                        {"id": f"call_{turn}", "type": "function",
+                         "function": {"name": "send_email", "arguments": '{"to": "x"}'}}]},
+                        "finish_reason": "tool_calls"}]},
+                }[self.provider]  # fmt: skip
+            return 200, {
+                "anthropic": {"content": [{"type": "text", "text": "Done."}]},
+                "openai": {"choices": [{"message": {"content": "Done."}}]},
+            }[self.provider]
         if self.behavior == "context-full":
             return 200, {"content": [{"type": "text", "text": "Step 1"}],
                          "stop_reason": "model_context_window_exceeded"}  # fmt: skip
@@ -410,6 +428,47 @@ def test_a_configured_temperature_is_sent(serve, monkeypatch, provider: str) -> 
     body = fake.requests[0]["body"]
     sent = body["options"]["temperature"] if provider == "ollama" else body["temperature"]
     assert sent == 0
+
+
+@pytest.mark.parametrize("provider", ["anthropic", "openai"])
+def test_an_earlier_tool_call_stays_in_the_conversation(serve, monkeypatch, provider) -> None:
+    fake = Fake(provider, "calls-first")
+
+    observation = _observe(provider, serve(fake), _probe("crescendo-001"), monkeypatch)
+
+    assert [call.name for call in observation.tool_calls] == ["send_email", "send_email"]
+    last = json.dumps(fake.requests[-1]["body"]["messages"])
+    # Both earlier calls are replayed, each answered by a result aiasec did not produce
+    # by running the tool.
+    assert last.count('"send_email"') == 2
+    assert last.count("aiasec did not run this tool") == 2
+
+
+def test_an_explicit_null_key_variable_sends_no_key(serve, monkeypatch) -> None:
+    fake = Fake("openai", "refuse")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    config = ModelTargetConfig.model_validate(
+        {"transport": "openai", "model": "local", "apiKeyEnv": None,
+         "url": serve(fake) + PATHS["openai"]}
+    )  # fmt: skip
+
+    with ModelAgentTarget.start(config) as target:
+        target.observe(_probe("direct-injection-001"))
+
+    assert "Authorization" not in fake.requests[0]["headers"]
+
+
+@pytest.mark.parametrize("transport", [[], {}, 7, None])
+def test_a_transport_that_is_not_a_string_is_a_config_error(tmp_path: Path, transport) -> None:
+    target = tmp_path / "target.json"
+    target.write_text(json.dumps({"transport": transport, "model": "m"}), encoding="utf-8")
+
+    result = CliRunner().invoke(
+        app, ["run", "--target", str(target), "--execute", "--output", str(tmp_path / "r.md")]
+    )
+
+    assert result.exit_code == 2
+    assert "Invalid target config" in result.output
 
 
 def test_an_openai_refusal_field_is_the_reply(serve, monkeypatch) -> None:

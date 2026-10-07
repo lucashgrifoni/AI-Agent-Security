@@ -48,6 +48,8 @@ PROVIDERS: dict[str, tuple[str, str | None]] = {
 ANTHROPIC_VERSION = "2023-06-01"
 TOOL_NAME = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 DEFAULT_TOOL = "read_document"
+# The result replayed for a tool call the model made on an earlier turn.
+NOT_RUN = "aiasec did not run this tool: it records tool calls without running them."
 
 
 class ModelTargetError(HttpTargetError):
@@ -110,7 +112,11 @@ class ModelTargetConfig(BaseModel):
 
     @property
     def key_variable(self) -> str | None:
-        return self.api_key_env or PROVIDERS[self.transport][1]
+        """The key's variable: the configured one, none for an explicit null, else the default."""
+
+        if "api_key_env" in self.model_fields_set:
+            return self.api_key_env
+        return PROVIDERS[self.transport][1]
 
 
 class ModelAgentTarget:
@@ -142,9 +148,21 @@ class ModelAgentTarget:
         return f"{self._config.transport} model {self._config.model} at {host}"
 
     def observe(self, probe: Probe) -> TargetObservation:
-        """Send a probe to the model, one request per turn, and return what it did."""
+        """Send a probe to the model, one request per turn, and return what it did.
 
-        return drive_conversation(probe, lambda arguments: self._send(arguments["inputs"]))
+        The tool calls of each turn are replayed on later turns, so the model sees the
+        conversation it actually had.
+        """
+
+        earlier: list[list[ToolCall]] = []
+
+        def send(arguments: dict[str, Any]) -> tuple[str, list[ToolCall]]:
+            transcript = build_transcript(arguments["inputs"], self._config, earlier)
+            text, calls = self._request(transcript)
+            earlier.append(calls)
+            return text, calls
+
+        return drive_conversation(probe, send)
 
     def close(self) -> None:
         """Nothing to release; each request uses its own connection."""
@@ -160,8 +178,7 @@ class ModelAgentTarget:
     ) -> None:
         self.close()
 
-    def _send(self, inputs: list[dict[str, Any]]) -> tuple[str, list[ToolCall]]:
-        transcript = build_transcript(inputs, self._config)
+    def _request(self, transcript: Transcript) -> tuple[str, list[ToolCall]]:
         provider = self._config.transport
         body = RENDERERS[provider](transcript, self._config)
         endpoint = self._config.endpoint
@@ -210,17 +227,27 @@ class Transcript(BaseModel):
 
     system: str
     tools: list[ModelTool]
-    # Entries: {"kind": "user"|"assistant", "text"} | {"kind": "call", "id", "name"}
+    # Entries: {"kind": "user"|"assistant", "text"}
+    #          | {"kind": "call", "id", "name", "arguments"}
     #          | {"kind": "result", "id", "name", "text"}
-    entries: list[dict[str, str]]
+    entries: list[dict[str, Any]]
 
 
-def build_transcript(inputs: list[dict[str, Any]], config: ModelTargetConfig) -> Transcript:
-    """Map probe inputs to messages, tool calls with results, and tool definitions."""
+def build_transcript(
+    inputs: list[dict[str, Any]],
+    config: ModelTargetConfig,
+    earlier_calls: list[list[ToolCall]] | None = None,
+) -> Transcript:
+    """Map probe inputs to messages, tool calls with results, and tool definitions.
+
+    earlier_calls holds the tool calls the model made on each earlier turn; they follow
+    that turn's reply, each with a result saying the tool was not run.
+    """
 
     system = [config.system] if config.system else []
     tools = {tool.name: tool for tool in config.tools}
-    entries: list[dict[str, str]] = []
+    entries: list[dict[str, Any]] = []
+    turns_seen = 0
     for item in inputs:
         role = item.get("role")
         content = item.get("content") or ""
@@ -233,6 +260,19 @@ def build_transcript(inputs: list[dict[str, Any]], config: ModelTargetConfig) ->
             # and providers reject an empty message.
             if text or role == "user":
                 entries.append({"kind": role, "text": text})
+            if role == "assistant":
+                calls = (earlier_calls or [])[turns_seen : turns_seen + 1]
+                for number, call in enumerate(calls[0] if calls else [], start=1):
+                    call_id = f"aiasec_turn{turns_seen + 1}_call{number}"
+                    tools.setdefault(call.name, ModelTool(name=call.name))
+                    entries.append(
+                        {"kind": "call", "id": call_id, "name": call.name,
+                         "arguments": call.arguments}
+                    )  # fmt: skip
+                    entries.append(
+                        {"kind": "result", "id": call_id, "name": call.name, "text": NOT_RUN}
+                    )
+                turns_seen += 1
         elif role == "rag_corpus":
             text = "Retrieved documents:\n\n" + _documents_text(documents)
             entries.append({"kind": "user", "text": text})
@@ -254,6 +294,17 @@ def build_transcript(inputs: list[dict[str, Any]], config: ModelTargetConfig) ->
             # A role with no route would never reach the model, and its probe would pass.
             raise ModelTargetError(f"Probe input role {role!r} has no route to a model API")
     return Transcript(system="\n\n".join(system), tools=list(tools.values()), entries=entries)
+
+
+def _arguments_object(arguments: Any) -> dict[str, Any]:
+    """Tool call arguments as the object a tool_use block needs."""
+
+    if isinstance(arguments, str):
+        try:
+            arguments = json.loads(arguments)
+        except (ValueError, RecursionError):
+            return {}
+    return arguments if isinstance(arguments, dict) else {}
 
 
 def _documents_text(documents: list[dict[str, Any]]) -> str:
@@ -333,7 +384,12 @@ def _anthropic_body(transcript: Transcript, config: ModelTargetConfig) -> dict[s
         if entry["kind"] in ("user", "assistant"):
             messages.append({"role": entry["kind"], "content": entry["text"]})
         elif entry["kind"] == "call":
-            block = {"type": "tool_use", "id": entry["id"], "name": entry["name"], "input": {}}
+            block = {
+                "type": "tool_use",
+                "id": entry["id"],
+                "name": entry["name"],
+                "input": _arguments_object(entry.get("arguments")),
+            }
             messages.append({"role": "assistant", "content": [block]})
         else:
             block = {"type": "tool_result", "tool_use_id": entry["id"], "content": entry["text"]}
@@ -396,10 +452,14 @@ def _chat_messages(transcript: Transcript, *, ollama: bool) -> list[dict[str, An
         if entry["kind"] in ("user", "assistant"):
             messages.append({"role": entry["kind"], "content": entry["text"]})
         elif entry["kind"] == "call" and ollama:
-            call = {"function": {"name": entry["name"], "arguments": {}}}
+            arguments = _arguments_object(entry.get("arguments"))
+            call = {"function": {"name": entry["name"], "arguments": arguments}}
             messages.append({"role": "assistant", "content": "", "tool_calls": [call]})
         elif entry["kind"] == "call":
-            function = {"name": entry["name"], "arguments": "{}"}
+            arguments = entry.get("arguments")
+            if not isinstance(arguments, str):
+                arguments = json.dumps(_arguments_object(arguments))
+            function = {"name": entry["name"], "arguments": arguments}
             call = {"id": entry["id"], "type": "function", "function": function}
             messages.append({"role": "assistant", "content": None, "tool_calls": [call]})
         elif ollama:
