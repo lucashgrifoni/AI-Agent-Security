@@ -12,6 +12,16 @@ All notable changes to this project will be documented in this file.
   in `.github/requirements` and build without downloading a build backend; the Snyk
   CLI comes from Snyk's setup action pinned by commit, at a fixed version whose
   checksum it verifies. Dependabot refreshes the locks and the action pin.
+- `aiasec run --tool-calls-file calls.json` reads observed tool calls, with their
+  arguments, in the `toolsCalled` shape of the target contract. With `--tools-called`
+  (names only) the two argument probes can only report that the arguments were not
+  reported. The file cannot be combined with `--tools-called` or `--target`.
+- A tool call reported with a blank name, as a bare string or in an object, is a
+  contract error, from a target or from the file. A bare `""` used to pass as a
+  call to no tool at all.
+- An invalid target config, or `mcp tools list --config`, lists each invalid field
+  with its reason on its own line. The message no longer carries pydantic's
+  documentation links or the rejected value, which could be a header or env secret.
 
 ## 0.2.0 - 2026-10-07
 

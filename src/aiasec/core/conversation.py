@@ -35,12 +35,17 @@ def parse_tool_calls(reported: object) -> list[ToolCall]:
         raise ValueError("expected a list of tool names or {name, arguments} objects")
     calls: list[ToolCall] = []
     for entry in reported:
-        if isinstance(entry, str):
+        # A blank name matches no tool, so it would hide a call from every check.
+        if isinstance(entry, str) and entry.strip():
             calls.append(ToolCall(name=entry))
             continue
         name = entry.get("name") if isinstance(entry, dict) else None
         arguments = entry.get("arguments") if isinstance(entry, dict) else None
-        if not isinstance(name, str) or not name or not isinstance(arguments, dict | str | None):
+        if (
+            not isinstance(name, str)
+            or not name.strip()
+            or not isinstance(arguments, dict | str | None)
+        ):
             raise ValueError(
                 "each tool call must be a tool name or an object with a non-empty string name "
                 "and arguments that are an object or a string"

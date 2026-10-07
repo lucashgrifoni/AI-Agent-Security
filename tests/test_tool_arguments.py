@@ -91,6 +91,9 @@ def test_names_and_objects_are_both_accepted() -> None:
     [
         {"arguments": {}},
         {"name": "", "arguments": {}},
+        {"name": "  ", "arguments": {}},
+        "",
+        "   ",
         {"name": 3},
         {"name": "open_file", "arguments": ["../x"]},
         {"name": "open_file", "arguments": 7},
