@@ -8,6 +8,9 @@ All notable changes to this project will be documented in this file.
   arguments, in the `toolsCalled` shape of the target contract. With `--tools-called`
   (names only) the two argument probes can only report that the arguments were not
   reported. The file cannot be combined with `--tools-called` or `--target`.
+- A tool call reported with a blank name, as a bare string or in an object, is a
+  contract error, from a target or from the file. A bare `""` used to pass as a
+  call to no tool at all.
 - An invalid target config, or `mcp tools list --config`, lists each invalid field
   with its reason on its own line. The message no longer carries pydantic's
   documentation links or the rejected value, which could be a header or env secret.

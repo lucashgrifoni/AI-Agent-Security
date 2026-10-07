@@ -100,10 +100,13 @@ def test_the_file_excludes_other_sources_of_tool_calls(
         "not json",
         json.dumps({"toolsCalled": ["fetch_url"]}),
         json.dumps([{"name": "", "arguments": {"token": "sk-live-SECRET"}}]),
+        json.dumps(["fetch_url", ""]),
         json.dumps([{"name": "fetch_url", "arguments": ["sk-live-SECRET"]}]),
         "[" * 100_000,
     ],
-    ids=["not-json", "not-a-list", "empty-name", "list-arguments", "deep-nesting"],
+    ids=[
+        "not-json", "not-a-list", "empty-name", "empty-bare-name", "list-arguments", "deep-nesting"
+    ],  # fmt: skip
 )
 def test_a_malformed_file_is_a_contract_error_that_echoes_nothing(
     tmp_path: Path, content: str
