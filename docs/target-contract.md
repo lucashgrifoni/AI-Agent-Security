@@ -59,7 +59,9 @@ aiasec calls the agent tool with these arguments:
 ```
 
 `inputs` is the conversation so far. The harness decides how to present each role to
-its agent: `user` as user messages, `assistant` as the agent's own earlier replies,
+its agent: `system` as part of the agent's system prompt (a probe may plant a secret
+there to test that the agent keeps it), `user` as user messages, `assistant` as the
+agent's own earlier replies,
 `rag_corpus` as retrieved documents, `tool_output` as the output of a tool the agent
 called, `tool_catalog` as tool definitions the agent can see (their `description` is
 attacker-controlled in `mcp-specific` probes). Feed attacker-controlled content to the
@@ -171,11 +173,16 @@ when at least one did.
 
 ## Reference targets
 
-`examples/target-mcp-good/server.py` and `examples/target-mcp-vulnerable/server.py`
-implement this contract in about 100 lines of standard-library Python each. Neither
-uses an LLM: the good one refuses and calls no tools, and the vulnerable one repeats
-every untrusted instruction and calls every tool it names, passing the instruction text
-as the tool's arguments. They prove the pipeline
+`examples/harness` holds two copyable templates that implement this contract in
+standard-library Python: `mcp_stdio_harness.py` and `http_harness.py`. Replace their
+`run_agent` with a call into your agent; until you do, they fail the run instead of
+passing it (see [examples/harness/README.md](../examples/harness/README.md)).
+
+`examples/target-mcp-good`, `examples/target-mcp-vulnerable` and
+`examples/target-http-vulnerable` serve the two agents in `examples/reference_agents.py`
+through those templates. Neither agent uses an LLM: the good one refuses and calls no
+tools, and the vulnerable one repeats every untrusted instruction and calls every tool
+it names, passing the instruction text as the tool's arguments. They prove the pipeline
 end to end; they say nothing about how a real model behaves.
 
 ## Protocol version
