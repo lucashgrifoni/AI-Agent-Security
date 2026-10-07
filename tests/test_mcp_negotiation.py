@@ -144,7 +144,9 @@ def test_silent_probe_falls_back_and_skips_the_late_discover_reply() -> None:
 
     assert session.era == "legacy"
     assert tools[0]["name"] == "aiasec_agent"
-    assert transport.timeouts[0] == 0.5
+    # The transport gets what is left of the probe deadline, a hair under 0.5 s.
+    probe_wait = transport.timeouts[0]
+    assert probe_wait is not None and 0.4 < probe_wait <= 0.5
 
 
 def test_unsupported_version_with_no_mutual_version_fails_without_initialize() -> None:
