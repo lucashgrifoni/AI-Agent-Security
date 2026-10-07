@@ -16,8 +16,8 @@ All notable changes to this project will be documented in this file.
   it used to escape as a `RecursionError` traceback with exit 1.
 - An MCP target can no longer exhaust aiasec's memory: at most 16 of its messages wait
   unread, so a flooding target meets the pipe's backpressure, and a message longer
-  than 1,048,576 characters fails the run. `close()` no longer waits on a stream another thread is
-  still reading or writing.
+  than 1,048,576 characters fails the run. `close()` no longer waits on a stream
+  another thread is still reading or writing.
 - Only the errors MCP 2026-07-28 defines (`-32020`, `-32021`, `-32022`) mark a server
   as modern. Any other code in the reserved `-32020` to `-32099` range, such as
   `-32042` from 2025-11-25, now leads to the `initialize` fallback instead of failing
@@ -37,6 +37,14 @@ All notable changes to this project will be documented in this file.
   accepts exit 1 only when this run wrote a new one.
 - The Code of Conduct asks for reserved `.test` hosts only when a payload names a
   network or email destination; payloads without one were in breach as written.
+- Release automation: publishing a GitHub Release builds the wheel and sdist, attests
+  their provenance, attaches them with a CycloneDX SBOM and the provenance bundle, and
+  publishes to PyPI through trusted publishing once the maintainer enables it. See
+  `docs/releasing.md`.
+- CI egress: Harden-Runner blocks outbound traffic outside each job's allowlist; jobs
+  that move artifacts stay in audit mode, with the reason in the workflow.
+- Optional Snyk Code job, enabled by the `SNYK_ENABLED` variable and `SNYK_TOKEN`
+  secret.
 - Five new probes: `output-manipulation` (`html-script-output-001`,
   `sql-payload-output-001`, `shell-payload-output-001`, OWASP LLM05) and
   `mcp-specific` (`tool-description-poisoning-001`, `tool-shadowing-001`, OWASP MCP03),
