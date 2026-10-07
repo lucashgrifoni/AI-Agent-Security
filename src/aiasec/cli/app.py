@@ -14,7 +14,12 @@ from pydantic import ValidationError
 from aiasec import __version__
 from aiasec.core.conversation import parse_tool_calls
 from aiasec.core.evaluator.rules import TargetObservation, ToolCall
-from aiasec.core.gate import SEVERITY_ORDER, GateThresholds, gate_report
+from aiasec.core.gate import (
+    SEVERITY_ORDER,
+    GateThresholds,
+    PartialReportError,
+    gate_report,
+)
 from aiasec.core.probe import Probe, load_probes_from_dir
 from aiasec.core.runner import run_probes, run_probes_against
 from aiasec.core.verdict import ProbeRunResult
@@ -461,6 +466,13 @@ def gate(
         bool,
         typer.Option("--exit-on-fail", help="Exit with code 1 when the gate fails."),
     ] = False,
+    allow_partial: Annotated[
+        bool,
+        typer.Option(
+            "--allow-partial",
+            help="Gate a report of a probe subset (--category, --min-severity, --probe-id).",
+        ),
+    ] = False,
 ) -> None:
     """Apply release thresholds to a SARIF report and emit a verdict."""
 
@@ -471,22 +483,26 @@ def gate(
         max_low=max_low,
     )
     try:
-        decision = gate_report(report, thresholds)
+        decision = gate_report(report, thresholds, allow_partial=allow_partial)
+    except PartialReportError as exc:
+        typer.echo(f"Gate refused the report: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
     except (OSError, ValueError) as exc:
         typer.echo(f"Gate failed to read report: {exc}", err=True)
         raise typer.Exit(code=2) from exc
 
-    _echo_json(
-        {
-            "counts": decision.counts,
-            "probesExecuted": decision.probes_executed,
-            "report": str(report),
-            "thresholds": thresholds.model_dump(exclude_none=True),
-            "total": decision.total,
-            "verdict": decision.verdict,
-            "violations": [violation.model_dump() for violation in decision.violations],
-        }
-    )
+    payload: dict[str, object] = {
+        "counts": decision.counts,
+        "probesExecuted": decision.probes_executed,
+        "report": str(report),
+        "thresholds": thresholds.model_dump(exclude_none=True),
+        "total": decision.total,
+        "verdict": decision.verdict,
+        "violations": [violation.model_dump() for violation in decision.violations],
+    }
+    if decision.selections:
+        payload["selections"] = decision.selections
+    _echo_json(payload)
     if not decision.passed and exit_on_fail:
         raise typer.Exit(code=1)
 
