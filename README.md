@@ -62,8 +62,10 @@ aiasec gate --report good.sarif --max-critical 0 --max-high 0 --exit-on-fail
 ```
 
 `--execute` is required because `--target` starts the command in the config. Read the
-config before you pass it. To test your own agent, wrap it in a harness that follows
-[docs/target-contract.md](docs/target-contract.md) and point `--target` at its config.
+config before you pass it. To test your own agent, copy a harness template from
+[`examples/harness`](examples/harness/README.md) (MCP stdio or HTTP), connect its
+`run_agent` to your agent, and point `--target` at its config. The full contract is in
+[docs/target-contract.md](docs/target-contract.md).
 
 To test an agent behind HTTP, start the HTTP reference target and point `--target`
 at its config:
@@ -370,7 +372,7 @@ src/aiasec/
   mcp/                 MCP stdio adapter, target driver, config, fixtures, and transports
   outputs/             Markdown and SARIF renderers
   probes/              bundled probe suite, one directory per category
-examples/              reference MCP targets (good, vulnerable) and a tools/list fixture
+examples/              harness templates, reference targets (good, vulnerable) and a tools/list fixture
 docs/                  probe authoring guide and target contract
 tests/                 unit and end-to-end tests
 ```
