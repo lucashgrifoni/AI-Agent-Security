@@ -16,6 +16,23 @@ All notable changes to this project will be documented in this file.
   report: summary, severity counts, findings, and every probe with its result. The
   page has no script and loads nothing (a Content Security Policy forbids both), and
   every value taken from a probe file or a selection is escaped.
+- An HTTP target header that takes its value from an environment variable holding a
+  line break now fails before any request, naming the variable. It used to fail
+  inside `http.client` with an error that quoted the value, usually a credential, into
+  the terminal or CI log.
+- Model API targets: a target config with `transport` `anthropic`, `openai` (or a
+  compatible server) or `ollama` sends each probe turn straight to the model with your
+  system prompt and tool definitions. Tool calls the model asks for are recorded with
+  their arguments and never executed; later turns replay each reply with its calls, a
+  result saying the tool was not run, and, for Anthropic, the reply's thinking blocks
+  as returned. The API key comes from an environment variable, is only sent over https
+  or to a loopback address, and is redacted from errors; `"apiKeyEnv": null` sends
+  none. No temperature is sent unless the config sets one, and `maxTokens` defaults to
+  16000 because thinking and reasoning tokens count toward it. A reply fails the run
+  instead of being scored when it is malformed, blank without a refusal, cut at
+  `maxTokens` or the context window, not marked complete by its stop reason, stopped
+  for a tool call it does not carry, or calls a tool by a name the API does not
+  accept. Example configs are in `examples/model-targets`; no new dependency.
 - The composite action installs aiasec's dependencies from a hash-locked file in its
   own checkout (`.github/requirements/action.txt`), so pinning the action to a commit
   also pins every package it installs. It used to install the newest releases that

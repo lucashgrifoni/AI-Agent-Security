@@ -32,11 +32,13 @@ from aiasec.mcp.fixtures import load_jsonrpc_fixture
 from aiasec.mcp.stdio import McpProtocolError, McpRemoteError, McpStdioAdapter
 from aiasec.mcp.target import McpAgentTarget, McpTargetError
 from aiasec.mcp.transport import McpTransportError
+from aiasec.modeltarget import PROVIDERS, ModelAgentTarget, ModelTargetConfig
 from aiasec.outputs.html import render_html
 from aiasec.outputs.markdown import render_markdown
 from aiasec.outputs.sarif import (
     HTTP_TARGET_MODE,
     MCP_TARGET_MODE,
+    MODEL_API_TARGET_MODE,
     SINGLE_OBSERVATION_MODE,
     render_sarif_json,
 )
@@ -266,10 +268,16 @@ def _load_config(config: Path) -> McpStdioConfig:
         raise typer.BadParameter(str(exc), param_hint="--config") from exc
 
 
-def _load_target_config(target: Path) -> McpStdioConfig | HttpTargetConfig:
+TargetConfig = McpStdioConfig | HttpTargetConfig | ModelTargetConfig
+
+
+def _load_target_config(target: Path) -> TargetConfig:
     raw = json.loads(target.read_text(encoding="utf-8"))
-    if isinstance(raw, dict) and raw.get("transport") == "http":
+    transport = raw.get("transport") if isinstance(raw, dict) else None
+    if transport == "http":
         return HttpTargetConfig.model_validate(raw)
+    if isinstance(transport, str) and transport in PROVIDERS:
+        return ModelTargetConfig.model_validate(raw)
     return McpStdioConfig.model_validate(raw)
 
 
@@ -288,11 +296,13 @@ def _run_against_target(
         typer.echo(f"Invalid target config {target}: {exc}", err=True)
         raise typer.Exit(code=2) from exc
     if not execute:
-        action = (
-            f"send probes to {config.url}"
-            if isinstance(config, HttpTargetConfig)
-            else f"start {config.command!r}"
-        )
+        if isinstance(config, HttpTargetConfig):
+            action = f"send probes to {config.url}"
+        elif isinstance(config, ModelTargetConfig):
+            model = f"the {config.transport} model {config.model}"
+            action = f"send probes to {model} at {config.endpoint}"
+        else:
+            action = f"start {config.command!r}"
         typer.echo(
             f"Refusing to {action} from {target}. Review the target config, then pass "
             "--execute to let aiasec run it.",
@@ -304,6 +314,10 @@ def _run_against_target(
             with HttpAgentTarget.start(config) as agent:
                 typer.echo(f"Target is {agent.label}.")
                 return run_probes_against(probes, agent.observe), HTTP_TARGET_MODE
+        if isinstance(config, ModelTargetConfig):
+            with ModelAgentTarget.start(config) as model:
+                typer.echo(f"Target is the {model.label}.")
+                return run_probes_against(probes, model.observe), MODEL_API_TARGET_MODE
         with McpAgentTarget.start(config) as agent:
             typer.echo(f"Target speaks {agent.label}.")
             return run_probes_against(probes, agent.observe), MCP_TARGET_MODE

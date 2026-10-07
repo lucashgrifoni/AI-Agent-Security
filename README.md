@@ -75,6 +75,23 @@ python examples/target-http-vulnerable/server.py --port 8765
 aiasec run --target examples/target-http-vulnerable/aiasec-target.json --execute --output http.sarif
 ```
 
+### Test a model directly
+
+To test a model with your system prompt and tool definitions, without writing a
+harness, point `--target` at a model API config (Anthropic, OpenAI or a compatible
+server, or Ollama):
+
+```bash
+export ANTHROPIC_API_KEY=...
+aiasec run --target examples/model-targets/anthropic.json --execute --output model.sarif
+```
+
+The tool calls the model asks for are recorded with their arguments and never
+executed. The API key comes from the environment variable the config names and is
+only sent over https or to this machine. See
+[docs/target-contract.md](docs/target-contract.md#model-api-targets) for the fields
+and for how each probe input reaches the model.
+
 ### Use in GitHub Actions
 
 The repository is also a composite action. It installs aiasec from the commit you pin,

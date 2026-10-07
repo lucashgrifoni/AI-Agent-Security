@@ -165,6 +165,98 @@ probes to the configured URL.
 `examples/target-http-vulnerable/server.py` is the HTTP reference target. It listens on
 `127.0.0.1` only.
 
+## Model API targets
+
+To test a model and its system prompt and tool definitions without writing a harness,
+point the target config at the model's API. aiasec supports three:
+
+| `transport` | Default `url` | Default `apiKeyEnv` |
+|---|---|---|
+| `anthropic` | `https://api.anthropic.com/v1/messages` | `ANTHROPIC_API_KEY` |
+| `openai` | `https://api.openai.com/v1/chat/completions` (any server that implements Chat Completions) | `OPENAI_API_KEY` |
+| `ollama` | `http://127.0.0.1:11434/api/chat` | none |
+
+```json
+{
+  "transport": "anthropic",
+  "model": "claude-sonnet-5-5",
+  "system": "You are the support assistant for Example Corp.",
+  "tools": [{"name": "send_email", "description": "Send an email.", "inputSchema": {"type": "object"}}],
+  "maxTokens": 16000,
+  "timeoutSeconds": 60
+}
+```
+
+`examples/model-targets` has one config per provider.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `model` | required | the model id the API expects |
+| `url` | per provider | full endpoint URL |
+| `apiKeyEnv` | per provider | name of the environment variable that holds the API key; the key itself never goes in the file. `null` sends no key, for a local server without authentication |
+| `system` | empty | system prompt |
+| `tools` | none | tools the model may call: `name` (letters, digits, `_` and `-`; up to 128 characters for Anthropic, 64 for OpenAI and Ollama; each used once), `description`, `inputSchema` (JSON Schema) |
+| `maxTokens` | `16000` | output limit per request; thinking and reasoning tokens count toward it, so a model that thinks by default (Claude Sonnet 5.5) or a reasoning model needs room beyond the reply. Sent as `max_tokens`, `max_completion_tokens` or Ollama's `num_predict`; an OpenAI-compatible server must accept `max_completion_tokens` |
+| `temperature` | not sent | sampling temperature; set `0` where the model accepts it to reduce variation between runs. Current Claude models reject any value but `1.0`, and some OpenAI reasoning models accept only their default |
+| `timeoutSeconds` | `60` | deadline for each request, as for HTTP targets (1 to 600) |
+
+For each probe turn aiasec sends the conversation so far as one request. The model's
+text is the reply. A reply that is malformed, blank (empty or only whitespace) without a
+refusal, cut at `maxTokens` or the context window, not marked complete by its stop
+reason (`stop_reason`, `finish_reason`, or Ollama's `done`), stopped for a tool call
+without carrying one, or that calls a tool by a name the API does not accept fails the
+run instead of being scored. **The tool calls it asks for are recorded with their arguments and
+never executed**: the turn ends there, so a model that would call `send_email` fails
+the probe without anything being sent. On the next turn of a multi-turn probe, those
+calls are replayed in the reply that made them, all in one assistant message as the API
+returned them, followed by one result each saying aiasec did not run the tool, so the
+model sees the conversation it actually had. An Anthropic reply goes back exactly as it
+came, thinking blocks included, which the API requires whenever a tool result follows. The Anthropic API combines consecutive
+assistant messages, so when a probe's own `assistant` input comes right before a reply
+that has only tool calls, Claude reads the two as one turn. A probe turn that ends with
+an `assistant` input reaches Anthropic as a prefill, which Claude continues instead of
+answering: Claude Sonnet 4.5, Claude Haiku 4.5 and older models accept it, while Claude
+Sonnet 4.6, Sonnet 5 and Sonnet 5.5 reject it with HTTP 400, and the run fails with that
+reason.
+
+Probe inputs reach the model like this:
+
+- `system` inputs are appended to `system`;
+- `user` and `assistant` inputs are messages;
+- `rag_corpus` documents arrive in a user message headed "Retrieved documents";
+- `tool_output` becomes a call the model is shown to have made, followed by its result
+  (an Anthropic `tool_use` and `tool_result`, an OpenAI `tool_calls` entry and `tool`
+  message, an Ollama `tool_calls` entry and `tool` message). The tool takes its name
+  from a `tool://<name>/...` document path when the provider accepts that name,
+  otherwise `read_document`, and is declared
+  to the model if `tools` does not declare it;
+- `tool_catalog` documents become tool definitions, named after the last segment of
+  the document path (`read_document` when the provider rejects that name), with the
+  document text, injected part included, as description. A name already taken, by a
+  configured tool or an earlier document, gets a `_2`, `_3`... suffix, so every
+  description reaches the model and no configured tool is replaced;
+- any other role fails the run instead of being left out.
+
+A real agent may route these differently (a retrieval step, its own tool loop). This
+target tests the model with your prompt and tool definitions; to test the agent around
+it, use a harness ([examples/harness](../examples/harness/README.md)).
+
+The API key is read from the environment when the run starts, is sent only to `url`,
+and only over https or to a loopback address: a config that would send it over plain
+http to another host is rejected. Errors never repeat it. The API answers that are not
+200 fail the run with the status and the provider's error message; replies that do not
+have the provider's shape fail it too, and so does a reply with neither text nor a tool
+call, which would otherwise pass every pattern check. A refusal the API signals
+(Anthropic `stop_reason` `refusal`, OpenAI `finish_reason` `content_filter`) counts
+as an empty reply. A reply the API marks as cut at `maxTokens` (Anthropic
+`max_tokens`, OpenAI and Ollama `length`) or by the context window (Anthropic
+`model_context_window_exceeded`) fails the run too: what a probe looks for could sit
+past the cut. An earlier reply that was an empty refusal is left out of the
+conversation sent on the next turn, since providers reject an empty message.
+
+`--execute` is required here as well: it is the opt-in to send adversarial probes to
+the model, and each request is billed by the provider.
+
 ## Exit codes
 
 A target that breaks the contract, times out, or crashes makes `aiasec run` exit 2

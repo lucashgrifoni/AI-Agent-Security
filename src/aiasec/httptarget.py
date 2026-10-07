@@ -80,7 +80,7 @@ class HttpAgentTarget:
         self._scheme = parts.scheme
         self._host = parts.hostname or ""
         self._port = parts.port
-        self._path = (parts.path or "/") + (f"?{parts.query}" if parts.query else "")
+        self._path = request_path(config.url)
 
     @classmethod
     def start(cls, config: HttpTargetConfig) -> HttpAgentTarget:
@@ -114,78 +114,112 @@ class HttpAgentTarget:
         self.close()
 
     def _post(self, probe_id: str, arguments: dict[str, Any]) -> tuple[str, list[ToolCall]]:
-        body = json.dumps(arguments).encode("utf-8")
-        headers = {
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "User-Agent": f"aiasec/{__version__}",
-            **self._headers,
-        }
-        timeout = self._config.timeout_seconds
-        connection = self._connection()
-        outcome: dict[str, Any] = {}
-        # Held while the caller gives up and while the worker decides to send, so a
-        # request the caller already reported as timed out is never sent afterwards.
-        decision = threading.Lock()
-
-        def exchange() -> None:
-            try:
-                connection.connect()
-                with decision:
-                    if outcome.get("abandoned"):
-                        return
-                    outcome["socket"] = connection.sock
-                connection.request("POST", self._path, body=body, headers=headers)
-                response = connection.getresponse()
-                outcome["reply"] = (response.status, response.read(MAX_RESPONSE_BYTES + 1))
-            except Exception as exc:  # noqa: BLE001 - handed to the calling thread below
-                outcome["error"] = exc
-            finally:
-                connection.close()
-
-        # The socket timeout bounds each operation, not the request: a slow name lookup
-        # (no socket timeout covers it), a slow handshake, or a reply sent a byte at a
-        # time can each outlast it. The exchange gets timeoutSeconds in total; past it,
-        # shutting the socket down ends any read still in progress.
-        worker = threading.Thread(target=exchange, daemon=True)
-        worker.start()
-        worker.join(timeout)
-        if worker.is_alive():
-            with decision:
-                outcome["abandoned"] = True
-                sock = outcome.get("socket")
-            if sock is not None:
-                with suppress(OSError):
-                    sock.shutdown(socket.SHUT_RDWR)
-            raise HttpTargetError(f"Target timed out after {timeout} s")
-        error = outcome.get("error")
-        if isinstance(error, TimeoutError):
-            raise HttpTargetError(f"Target timed out after {timeout} s") from error
-        if isinstance(error, (OSError, http.client.HTTPException)):
-            raise HttpTargetError(f"HTTP request to the target failed: {error}") from error
-        if error is not None:
-            raise error
-
-        status, payload = outcome["reply"]
+        status, payload = post_json(
+            self._connection(), self._path, arguments, self._headers, self._config.timeout_seconds
+        )
         if status != 200:
             raise HttpTargetError(
                 f"Target answered HTTP {status} for probe {probe_id}; aiasec expects 200 "
                 "and does not follow redirects"
             )
-        if len(payload) > MAX_RESPONSE_BYTES:
-            raise HttpTargetError(f"Target reply is larger than {MAX_RESPONSE_BYTES} bytes")
         return _parse_reply(payload, probe_id)
 
     def _connection(self) -> http.client.HTTPConnection:
-        timeout = self._config.timeout_seconds
-        if self._scheme == "https":
-            # The audit rule below warns about Pythons older than 3.4.3, which did not verify
-            # certificates. aiasec needs 3.12+ and passes a default context explicitly
-            # (CERT_REQUIRED, hostname checking); tests/test_http_target.py asserts both.
-            return http.client.HTTPSConnection(  # nosemgrep: httpsconnection-detected
-                self._host, self._port, timeout=timeout, context=ssl.create_default_context()
-            )
-        return http.client.HTTPConnection(self._host, self._port, timeout=timeout)
+        return connection_for(self._config.url, self._config.timeout_seconds)
+
+
+def connection_for(url: str, timeout: float) -> http.client.HTTPConnection:
+    """An unopened connection to the host of an http or https URL."""
+
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    if parts.scheme == "https":
+        # The audit rule below warns about Pythons older than 3.4.3, which did not verify
+        # certificates. aiasec needs 3.12+ and passes a default context explicitly
+        # (CERT_REQUIRED, hostname checking); tests/test_http_target.py asserts both.
+        return http.client.HTTPSConnection(  # nosemgrep: httpsconnection-detected
+            host, parts.port, timeout=timeout, context=ssl.create_default_context()
+        )
+    return http.client.HTTPConnection(host, parts.port, timeout=timeout)
+
+
+def request_path(url: str) -> str:
+    """The path and query of a URL, as the request line carries them."""
+
+    parts = urlsplit(url)
+    return (parts.path or "/") + (f"?{parts.query}" if parts.query else "")
+
+
+def post_json(
+    connection: http.client.HTTPConnection,
+    path: str,
+    document: dict[str, Any],
+    extra_headers: dict[str, str],
+    timeout: float,
+) -> tuple[int, bytes]:
+    """POST a JSON document and return the status and body, within one deadline.
+
+    Redirects are never followed, so a credential header cannot reach another host.
+    A reply larger than MAX_RESPONSE_BYTES raises.
+    """
+
+    body = json.dumps(document).encode("utf-8")
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": f"aiasec/{__version__}",
+        **extra_headers,
+    }
+    outcome: dict[str, Any] = {}
+    # Held while the caller gives up and while the worker decides to send, so a
+    # request the caller already reported as timed out is never sent afterwards.
+    decision = threading.Lock()
+
+    def exchange() -> None:
+        try:
+            connection.connect()
+            with decision:
+                if outcome.get("abandoned"):
+                    return
+                outcome["socket"] = connection.sock
+            connection.request("POST", path, body=body, headers=headers)
+            response = connection.getresponse()
+            outcome["reply"] = (response.status, response.read(MAX_RESPONSE_BYTES + 1))
+        except Exception as exc:  # noqa: BLE001 - handed to the calling thread below
+            outcome["error"] = exc
+        finally:
+            connection.close()
+
+    # The socket timeout bounds each operation, not the request: a slow name lookup
+    # (no socket timeout covers it), a slow handshake, or a reply sent a byte at a
+    # time can each outlast it. The exchange gets timeoutSeconds in total; past it,
+    # shutting the socket down ends any read still in progress.
+    worker = threading.Thread(target=exchange, daemon=True)
+    worker.start()
+    worker.join(timeout)
+    if worker.is_alive():
+        with decision:
+            outcome["abandoned"] = True
+            sock = outcome.get("socket")
+        if sock is not None:
+            with suppress(OSError):
+                sock.shutdown(socket.SHUT_RDWR)
+        raise HttpTargetError(f"Target timed out after {timeout} s")
+    error = outcome.get("error")
+    if isinstance(error, TimeoutError):
+        raise HttpTargetError(f"Target timed out after {timeout} s") from error
+    if isinstance(error, (OSError, http.client.HTTPException)):
+        raise HttpTargetError(f"HTTP request to the target failed: {error}") from error
+    if isinstance(error, ValueError):
+        # http.client quotes an invalid header value in its message; never repeat it.
+        raise HttpTargetError("HTTP request to the target has an invalid header") from None
+    if error is not None:
+        raise error
+
+    status, payload = outcome["reply"]
+    if len(payload) > MAX_RESPONSE_BYTES:
+        raise HttpTargetError(f"Target reply is larger than {MAX_RESPONSE_BYTES} bytes")
+    return status, payload
 
 
 def _expand(value: str) -> str:
@@ -194,6 +228,13 @@ def _expand(value: str) -> str:
         if name not in os.environ:
             raise HttpTargetError(
                 f"Header references environment variable {name}, which is not set"
+            )
+        # http.client would reject the header with an error that quotes the value,
+        # and the value is usually a credential.
+        if any(ch in os.environ[name] for ch in "\r\n\x00"):
+            raise HttpTargetError(
+                f"Environment variable {name} holds a line break or NUL, so it cannot go "
+                "in a header"
             )
         return os.environ[name]
 
