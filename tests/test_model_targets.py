@@ -98,6 +98,28 @@ class Fake:
         if self.behavior == "context-full":
             return 200, {"content": [{"type": "text", "text": "Step 1"}],
                          "stop_reason": "model_context_window_exceeded"}  # fmt: skip
+        if self.behavior == "two-calls":
+            # Text and two tool calls in one reply, numbered by the user messages so far.
+            turn = sum(1 for m in body["messages"]
+                       if m["role"] == "user" and isinstance(m["content"], str))  # fmt: skip
+            text = f"Reply {turn}."
+            return 200, {
+                "anthropic": {"content": [
+                    {"type": "text", "text": text},
+                    {"type": "tool_use", "id": f"a{turn}", "name": "send_email", "input": {}},
+                    {"type": "tool_use", "id": f"b{turn}", "name": "fetch_url", "input": {}},
+                ], "stop_reason": "tool_use"},
+                "openai": {"choices": [{"message": {"content": text, "tool_calls": [
+                    {"id": f"a{turn}", "type": "function",
+                     "function": {"name": "send_email", "arguments": "{}"}},
+                    {"id": f"b{turn}", "type": "function",
+                     "function": {"name": "fetch_url", "arguments": "{}"}},
+                ]}, "finish_reason": "tool_calls"}]},
+                "ollama": {"message": {"content": text, "tool_calls": [
+                    {"function": {"name": "send_email", "arguments": {}}},
+                    {"function": {"name": "fetch_url", "arguments": {}}},
+                ]}, "done": True},
+            }[self.provider]  # fmt: skip
         if self.behavior == "ollama-unfinished":
             return 200, {"message": {"role": "assistant", "content": "Step 1"}, "done": False}
         if self.behavior == "ollama-no-done":
@@ -482,9 +504,9 @@ def test_replayed_calls_follow_the_reply_that_made_them(serve, monkeypatch) -> N
 
     messages = fake.requests[-1]["body"]["messages"]
     contents = [message.get("content") for message in messages]
-    assert not messages[contents.index("Seeded answer.") + 1].get("tool_calls")
+    assert not messages[contents.index("Seeded answer.")].get("tool_calls")
     for reply in ("Reply 1.", "Reply 2."):
-        assert messages[contents.index(reply) + 1].get("tool_calls"), reply
+        assert messages[contents.index(reply)].get("tool_calls"), reply
 
 
 def test_catalog_tools_that_share_a_name_all_reach_the_model() -> None:
@@ -520,6 +542,36 @@ def test_a_suffixed_catalog_name_stays_within_the_provider_limit() -> None:
     names = [tool.name for tool in build_transcript(inputs, config).tools]
 
     assert names == [name, "z" * 62 + "_2"]
+
+
+@pytest.mark.parametrize("provider", ["anthropic", "openai", "ollama"])
+def test_one_reply_with_two_calls_is_replayed_as_one_message(
+    serve, monkeypatch, provider: str
+) -> None:
+    probe = Probe.model_validate(
+        {
+            "schema": "aiasec.probe/v1", "id": "two-calls-001", "title": "t", "category": "c",
+            "severity": "high",
+            "inputs": [{"role": "user", "content": "First question."},
+                       {"role": "user", "content": "Second question."}],
+            "expectations": [{"kind": "regex_not_match", "pattern": "7Q4"}],
+        }
+    )  # fmt: skip
+    fake = Fake(provider, "two-calls")
+
+    _observe(provider, serve(fake), probe, monkeypatch)
+
+    messages = fake.requests[-1]["body"]["messages"]
+    if provider == "anthropic":
+        [reply] = [m for m in messages if m["role"] == "assistant"]
+        assert [block["type"] for block in reply["content"]] == ["text", "tool_use", "tool_use"]
+        results = messages[messages.index(reply) + 1]["content"]
+        assert [block["type"] for block in results] == ["tool_result", "tool_result"]
+    else:
+        [reply] = [m for m in messages if m["role"] == "assistant"]
+        assert reply["content"] == "Reply 1." and len(reply["tool_calls"]) == 2
+        after = messages[messages.index(reply) + 1 : messages.index(reply) + 3]
+        assert [m["role"] for m in after] == ["tool", "tool"]
 
 
 def test_a_catalog_tool_never_replaces_a_configured_one() -> None:

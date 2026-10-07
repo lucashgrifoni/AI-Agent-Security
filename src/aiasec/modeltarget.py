@@ -296,13 +296,16 @@ def build_transcript(
             if text or role == "user":
                 entries.append({"kind": role, "text": text})
             if role == "assistant":
-                for number, call in enumerate((earlier_calls or {}).get(index, []), start=1):
-                    call_id = f"aiasec_reply{index}_call{number}"
+                calls = (earlier_calls or {}).get(index, [])
+                ids = [f"aiasec_reply{index}_call{n}" for n in range(1, len(calls) + 1)]
+                # A reply's calls stay together, as one response, then all their results.
+                for call_id, call in zip(ids, calls, strict=True):
                     tools.setdefault(call.name, ModelTool(name=call.name))
                     entries.append(
                         {"kind": "call", "id": call_id, "name": call.name,
                          "arguments": call.arguments}
                     )  # fmt: skip
+                for call_id, call in zip(ids, calls, strict=True):
                     entries.append(
                         {"kind": "result", "id": call_id, "name": call.name, "text": NOT_RUN}
                     )
@@ -443,10 +446,23 @@ def _anthropic_body(transcript: Transcript, config: ModelTargetConfig) -> dict[s
                 "name": entry["name"],
                 "input": _arguments_object(entry.get("arguments")),
             }
-            messages.append({"role": "assistant", "content": [block]})
+            # A call joins the assistant message before it: one response, one message.
+            if messages and messages[-1]["role"] == "assistant":
+                previous = messages[-1]
+                if isinstance(previous["content"], str):
+                    previous["content"] = [{"type": "text", "text": previous["content"]}]
+                previous["content"].append(block)
+            else:
+                messages.append({"role": "assistant", "content": [block]})
         else:
             block = {"type": "tool_result", "tool_use_id": entry["id"], "content": entry["text"]}
-            messages.append({"role": "user", "content": [block]})
+            # The results of one response go back together in one user message.
+            if messages and messages[-1]["role"] == "user" and isinstance(
+                messages[-1]["content"], list
+            ):
+                messages[-1]["content"].append(block)
+            else:
+                messages.append({"role": "user", "content": [block]})
     body: dict[str, Any] = {
         "model": config.model,
         "max_tokens": config.max_tokens,
@@ -504,17 +520,22 @@ def _chat_messages(transcript: Transcript, *, ollama: bool) -> list[dict[str, An
     for entry in transcript.entries:
         if entry["kind"] in ("user", "assistant"):
             messages.append({"role": entry["kind"], "content": entry["text"]})
-        elif entry["kind"] == "call" and ollama:
-            arguments = _arguments_object(entry.get("arguments"))
-            call = {"function": {"name": entry["name"], "arguments": arguments}}
-            messages.append({"role": "assistant", "content": "", "tool_calls": [call]})
         elif entry["kind"] == "call":
-            arguments = entry.get("arguments")
-            if not isinstance(arguments, str):
-                arguments = json.dumps(_arguments_object(arguments))
-            function = {"name": entry["name"], "arguments": arguments}
-            call = {"id": entry["id"], "type": "function", "function": function}
-            messages.append({"role": "assistant", "content": None, "tool_calls": [call]})
+            if ollama:
+                arguments = _arguments_object(entry.get("arguments"))
+                call = {"function": {"name": entry["name"], "arguments": arguments}}
+            else:
+                arguments = entry.get("arguments")
+                if not isinstance(arguments, str):
+                    arguments = json.dumps(_arguments_object(arguments))
+                function = {"name": entry["name"], "arguments": arguments}
+                call = {"id": entry["id"], "type": "function", "function": function}
+            # A call joins the assistant message before it: one response, one message.
+            if messages and messages[-1]["role"] == "assistant":
+                messages[-1].setdefault("tool_calls", []).append(call)
+            else:
+                content = "" if ollama else None
+                messages.append({"role": "assistant", "content": content, "tool_calls": [call]})
         elif ollama:
             messages.append({"role": "tool", "tool_name": entry["name"], "content": entry["text"]})
         else:
