@@ -635,7 +635,7 @@ def test_a_reply_without_a_complete_stop_reason_fails(
 
 @pytest.mark.parametrize(("provider", "reason"), [
     ("anthropic", "end_turn"), ("anthropic", "stop_sequence"),
-    ("openai", "stop"), ("openai", "function_call"),
+    ("openai", "stop"), ("openai", "content_filter"),
 ])  # fmt: skip
 def test_a_complete_stop_reason_is_scored(serve, monkeypatch, provider: str, reason: str) -> None:
     fake = Fake(provider, f"stop:{reason}")
@@ -655,9 +655,9 @@ def test_a_whitespace_only_reply_fails(serve, monkeypatch, provider: str) -> Non
 
 
 @pytest.mark.parametrize(("provider", "name"), [
-    ("anthropic", "send_email "), ("anthropic", "x" * 129),
-    ("openai", "send_email "), ("openai", "x" * 65),
-    ("ollama", "functions.send_email"),
+    ("anthropic", "send_email "), ("anthropic", "x" * 129), ("anthropic", "send_email\n"),
+    ("openai", "send_email "), ("openai", "x" * 65), ("openai", "send_email\n"),
+    ("ollama", "functions.send_email"), ("ollama", "send_email\n"),
 ])  # fmt: skip
 def test_a_tool_call_name_the_api_would_reject_fails(
     serve, monkeypatch, provider: str, name: str
@@ -721,6 +721,29 @@ def test_a_legacy_function_call_is_recorded(serve, monkeypatch, behavior: str) -
     assert [(c.name, c.arguments) for c in observation.tool_calls] == [
         ("send_email", '{"to": "x"}')
     ]
+
+
+@pytest.mark.parametrize(("provider", "reason"), [
+    ("anthropic", "tool_use"), ("openai", "tool_calls"), ("openai", "function_call"),
+])  # fmt: skip
+def test_a_tool_stop_reason_without_a_call_fails(
+    serve, monkeypatch, provider: str, reason: str
+) -> None:
+    # The reply says the model called a tool but carries no call to score.
+    fake = Fake(provider, f"stop:{reason}")
+
+    with pytest.raises(ModelTargetError, match="could not be read"):
+        _observe(provider, serve(fake), _probe("direct-injection-001"), monkeypatch)
+
+
+def test_a_document_path_name_with_a_trailing_newline_falls_back() -> None:
+    config = ModelTargetConfig.model_validate({"transport": "openai", "model": "m"})
+    inputs = [{"role": "tool_catalog", "documents": [{"path": "mcp://x/send_email\n"}]},
+              {"role": "user", "content": "Go on."}]  # fmt: skip
+
+    names = [tool.name for tool in build_transcript(inputs, config).tools]
+
+    assert names == ["read_document"]
 
 
 def test_a_repeated_configured_tool_name_is_a_config_error() -> None:

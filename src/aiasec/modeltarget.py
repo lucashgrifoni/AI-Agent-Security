@@ -369,7 +369,8 @@ def _documents_text(documents: list[dict[str, Any]]) -> str:
 def _fits(name: str, provider: str) -> bool:
     """Whether the provider's API accepts this tool name."""
 
-    return bool(TOOL_NAME.match(name)) and len(name) <= TOOL_NAME_LIMIT[provider]
+    # fullmatch: $ alone would also accept a name ending in a newline.
+    return bool(TOOL_NAME.fullmatch(name)) and len(name) <= TOOL_NAME_LIMIT[provider]
 
 
 def _tool_name_from_path(documents: list[dict[str, Any]], provider: str) -> str:
@@ -527,6 +528,8 @@ def _anthropic_reply(reply: dict[str, Any]) -> tuple[str, list[ToolCall], Cut]:
             texts.append(block["text"])
         elif block["type"] == "tool_use":
             calls.append(_call(block["name"], block["input"], "anthropic"))
+    if reply.get("stop_reason") == "tool_use" and not calls:
+        raise ValueError("the reply stopped for a tool call but carries none")
     text, calls = _observed(
         "\n".join(texts), calls, refused=reply.get("stop_reason") == "refusal"
     )
@@ -605,10 +608,12 @@ def _openai_reply(reply: dict[str, Any]) -> tuple[str, list[ToolCall], Cut]:
     legacy = message.get("function_call")
     if legacy is not None:
         calls.append(_call(legacy["name"], legacy.get("arguments"), "openai"))
+    reason = choice.get("finish_reason")
+    if reason in ("tool_calls", "function_call") and not calls:
+        raise ValueError("the reply stopped for a tool call but carries none")
     # A refusal arrives as message.refusal, with no content; it is the model's reply.
     refusal = message.get("refusal")
     text = refusal if isinstance(refusal, str) and refusal else message.get("content")
-    reason = choice.get("finish_reason")
     observed = _observed(text, calls, refused=reason == "content_filter")
     return *observed, OPENAI_STOPS.get(reason, "unfinished")
 
