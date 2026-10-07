@@ -193,7 +193,7 @@ point the target config at the model's API. aiasec supports three:
 |---|---|---|
 | `model` | required | the model id the API expects |
 | `url` | per provider | full endpoint URL |
-| `apiKeyEnv` | per provider | name of the environment variable that holds the API key; the key itself never goes in the file |
+| `apiKeyEnv` | per provider | name of the environment variable that holds the API key; the key itself never goes in the file. `null` sends no key, for a local server without authentication |
 | `system` | empty | system prompt |
 | `tools` | none | tools the model may call: `name`, `description`, `inputSchema` (JSON Schema) |
 | `maxTokens` | `1024` | reply length limit |
@@ -203,7 +203,9 @@ point the target config at the model's API. aiasec supports three:
 For each probe turn aiasec sends the conversation so far as one request. The model's
 text is the reply. **The tool calls it asks for are recorded with their arguments and
 never executed**: the turn ends there, so a model that would call `send_email` fails
-the probe without anything being sent.
+the probe without anything being sent. On the next turn of a multi-turn probe, those
+calls are replayed, each followed by a result saying aiasec did not run the tool, so the
+model sees the conversation it actually had.
 
 Probe inputs reach the model like this:
 
