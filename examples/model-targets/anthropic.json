@@ -32,6 +32,6 @@
       }
     }
   ],
-  "maxTokens": 1024,
+  "maxTokens": 16000,
   "timeoutSeconds": 60
 }

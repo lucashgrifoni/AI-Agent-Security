@@ -31,9 +31,16 @@ All notable changes to this project will be documented in this file.
 - Model API targets: a target config with `transport` `anthropic`, `openai` (or a
   compatible server) or `ollama` sends each probe turn straight to the model with your
   system prompt and tool definitions. Tool calls the model asks for are recorded with
-  their arguments and never executed. The API key comes from an environment variable
-  and is only sent over https or to a loopback address. Example configs are in
-  `examples/model-targets`; no new dependency.
+  their arguments and never executed; later turns replay each reply with its calls, a
+  result saying the tool was not run, and, for Anthropic, the reply's thinking blocks
+  as returned. The API key comes from an environment variable, is only sent over https
+  or to a loopback address, and is redacted from errors; `"apiKeyEnv": null` sends
+  none. No temperature is sent unless the config sets one, and `maxTokens` defaults to
+  16000 because thinking and reasoning tokens count toward it. A reply fails the run
+  instead of being scored when it is malformed, blank without a refusal, cut at
+  `maxTokens` or the context window, not marked complete by its stop reason, stopped
+  for a tool call it does not carry, or calls a tool by a name the API does not
+  accept. Example configs are in `examples/model-targets`; no new dependency.
 - The composite action installs aiasec's dependencies from a hash-locked file in its
   own checkout (`.github/requirements/action.txt`), so pinning the action to a commit
   also pins every package it installs. It used to install the newest releases that

@@ -122,6 +122,11 @@ class Fake:
                     {"function": {"name": "fetch_url", "arguments": {}}},
                 ]}, "done": True},
             }[self.provider]  # fmt: skip
+        if self.behavior == "no-type-call":
+            # A compatible server that leaves out the tool call's type.
+            return 200, {"choices": [{"message": {"content": "ok", "tool_calls": [
+                {"id": "c", "function": {"name": "send_email", "arguments": "{}"}}]},
+                "finish_reason": "tool_calls"}]}  # fmt: skip
         if self.behavior.startswith("tool-use-id:"):
             # A tool_use block whose id is missing, blank or not a string.
             block = {"type": "tool_use", "name": "send_email", "input": {}}
@@ -331,7 +336,7 @@ def test_anthropic_request_shape(serve, monkeypatch) -> None:
     assert request["path"] == "/v1/messages"
     assert request["headers"]["x-api-key"] == KEY
     assert request["headers"]["anthropic-version"] == "2023-06-01"
-    assert body["model"] == "test-model" and body["max_tokens"] == 1024
+    assert body["model"] == "test-model" and body["max_tokens"] == 16000
     # No temperature unless the config sets one: current Claude models reject any value
     # other than 1.0.
     assert "temperature" not in body and body["system"] == "You are the support assistant."
@@ -386,7 +391,7 @@ def test_openai_request_shape_and_string_arguments(serve, monkeypatch) -> None:
     body = request["body"]
     assert request["headers"]["Authorization"] == f"Bearer {KEY}"
     assert body["messages"][0] == {"role": "system", "content": "You are the support assistant."}
-    assert body["max_completion_tokens"] == 1024 and "temperature" not in body
+    assert body["max_completion_tokens"] == 16000 and "temperature" not in body
     assert body["tools"][0] == {
         "type": "function",
         "function": {"name": "send_email", "description": "Send an email.",
@@ -418,7 +423,7 @@ def test_ollama_request_shape(serve, monkeypatch) -> None:
     body = request["body"]
     assert "Authorization" not in request["headers"]
     assert body["stream"] is False
-    assert body["options"] == {"num_predict": 1024}
+    assert body["options"] == {"num_predict": 16000}
     call, result = body["messages"][2], body["messages"][3]
     assert call["tool_calls"] == [{"function": {"name": "open_file", "arguments": {}}}]
     assert result["role"] == "tool" and result["tool_name"] == "open_file"
@@ -839,6 +844,30 @@ def test_an_anthropic_tool_call_without_an_id_fails(serve, monkeypatch, raw_id: 
 
     with pytest.raises(ModelTargetError, match="could not be read"):
         _observe("anthropic", serve(fake), _probe("direct-injection-001"), monkeypatch)
+
+
+def test_an_error_other_than_400_gets_no_prefill_hint(serve, monkeypatch) -> None:
+    # A rate limit says nothing about the probe's last input.
+    fake = Fake("anthropic", "error")
+
+    with pytest.raises(ModelTargetError) as raised:
+        _observe("anthropic", serve(fake), Probe.model_validate(PREFILL), monkeypatch)
+
+    assert "429" in str(raised.value) and "prefill" not in str(raised.value)
+
+
+def test_an_openai_tool_call_without_a_type_is_recorded(serve, monkeypatch) -> None:
+    fake = Fake("openai", "no-type-call")
+
+    observation = _observe("openai", serve(fake), _probe("direct-injection-001"), monkeypatch)
+
+    assert [call.name for call in observation.tool_calls] == ["send_email"]
+
+
+def test_the_example_configs_leave_room_for_thinking() -> None:
+    for path in Path("examples/model-targets").glob("*.json"):
+        config = ModelTargetConfig.model_validate_json(path.read_text(encoding="utf-8"))
+        assert config.max_tokens >= 16000, path
 
 
 def test_a_repeated_configured_tool_name_is_a_config_error() -> None:
