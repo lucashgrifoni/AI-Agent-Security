@@ -85,9 +85,11 @@ class Fake:
                         "finish_reason": "tool_calls"}]},
                 }[self.provider]  # fmt: skip
             return 200, {
-                "anthropic": {"content": [{"type": "text", "text": "Done."}]},
-                "openai": {"choices": [{"message": {"content": "Done."}}]},
-            }[self.provider]
+                "anthropic": {"content": [{"type": "text", "text": "Done."}],
+                              "stop_reason": "end_turn"},
+                "openai": {"choices": [{"message": {"content": "Done."},
+                                        "finish_reason": "stop"}]},
+            }[self.provider]  # fmt: skip
         if self.behavior == "reply-and-call":
             # Text and a tool call on every turn, numbered by the user messages so far.
             turn = sum(1 for m in body["messages"] if m["role"] == "user")
@@ -120,6 +122,18 @@ class Fake:
                     {"function": {"name": "fetch_url", "arguments": {}}},
                 ]}, "done": True},
             }[self.provider]  # fmt: skip
+        if self.behavior.startswith("stop:"):
+            # A whole-looking reply with this stop reason; "absent" leaves the field out.
+            reason = self.behavior.removeprefix("stop:")
+            if self.provider == "anthropic":
+                reply = {"content": [{"type": "text", "text": "Hello."}]}
+                holder, key = reply, "stop_reason"
+            else:
+                reply = {"choices": [{"message": {"content": "Hello."}}]}
+                holder, key = reply["choices"][0], "finish_reason"
+            if reason != "absent":
+                holder[key] = None if reason == "null" else reason
+            return 200, reply
         if self.behavior == "ollama-unfinished":
             return 200, {"message": {"role": "assistant", "content": "Step 1"}, "done": False}
         if self.behavior == "ollama-no-done":
@@ -572,6 +586,40 @@ def test_one_reply_with_two_calls_is_replayed_as_one_message(
         assert reply["content"] == "Reply 1." and len(reply["tool_calls"]) == 2
         after = messages[messages.index(reply) + 1 : messages.index(reply) + 3]
         assert [m["role"] for m in after] == ["tool", "tool"]
+
+
+@pytest.mark.parametrize(("provider", "reason"), [
+    ("anthropic", "absent"), ("anthropic", "null"), ("anthropic", "pause_turn"),
+    ("anthropic", "eos"), ("openai", "absent"), ("openai", "null"), ("openai", "eos"),
+])  # fmt: skip
+def test_a_reply_without_a_complete_stop_reason_fails(
+    serve, monkeypatch, provider: str, reason: str
+) -> None:
+    fake = Fake(provider, f"stop:{reason}")
+
+    with pytest.raises(ModelTargetError, match="not finished"):
+        _observe(provider, serve(fake), _probe("direct-injection-001"), monkeypatch)
+
+
+@pytest.mark.parametrize(("provider", "reason"), [
+    ("anthropic", "end_turn"), ("anthropic", "stop_sequence"),
+    ("openai", "stop"), ("openai", "function_call"),
+])  # fmt: skip
+def test_a_complete_stop_reason_is_scored(serve, monkeypatch, provider: str, reason: str) -> None:
+    fake = Fake(provider, f"stop:{reason}")
+
+    observation = _observe(provider, serve(fake), _probe("direct-injection-001"), monkeypatch)
+
+    assert observation.assistant_final_response == "Hello."
+
+
+def test_a_repeated_configured_tool_name_is_a_config_error() -> None:
+    values = {"transport": "openai", "model": "m",
+              "tools": [{"name": "send_email", "description": "Sends."},
+                        {"name": "send_email", "description": "Something else."}]}  # fmt: skip
+
+    with pytest.raises(ValidationError, match="tools\\[1\\].name repeats"):
+        ModelTargetConfig.model_validate(values)
 
 
 def test_a_catalog_tool_never_replaces_a_configured_one() -> None:
