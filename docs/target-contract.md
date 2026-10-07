@@ -195,13 +195,15 @@ point the target config at the model's API. aiasec supports three:
 | `url` | per provider | full endpoint URL |
 | `apiKeyEnv` | per provider | name of the environment variable that holds the API key; the key itself never goes in the file. `null` sends no key, for a local server without authentication |
 | `system` | empty | system prompt |
-| `tools` | none | tools the model may call: `name` (letters, digits, `_` and `-`; up to 128 characters for Anthropic, 64 for OpenAI and Ollama), `description`, `inputSchema` (JSON Schema) |
+| `tools` | none | tools the model may call: `name` (letters, digits, `_` and `-`; up to 128 characters for Anthropic, 64 for OpenAI and Ollama; each used once), `description`, `inputSchema` (JSON Schema) |
 | `maxTokens` | `1024` | reply length limit |
 | `temperature` | not sent | sampling temperature; set `0` where the model accepts it to reduce variation between runs. Current Claude models reject any value but `1.0`, and some OpenAI reasoning models accept only their default |
 | `timeoutSeconds` | `60` | deadline for each request, as for HTTP targets (1 to 600) |
 
 For each probe turn aiasec sends the conversation so far as one request. The model's
-text is the reply. **The tool calls it asks for are recorded with their arguments and
+text is the reply. A reply that is malformed, empty without a refusal, cut at `maxTokens`
+or the context window, or not marked complete by its stop reason (`stop_reason`,
+`finish_reason`, or Ollama's `done`) fails the run instead of being scored. **The tool calls it asks for are recorded with their arguments and
 never executed**: the turn ends there, so a model that would call `send_email` fails
 the probe without anything being sent. On the next turn of a multi-turn probe, those
 calls are replayed in the reply that made them, all in one assistant message as the API

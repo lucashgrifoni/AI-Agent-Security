@@ -111,14 +111,20 @@ class ModelTargetConfig(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def fit_tool_names_to_the_provider(self) -> ModelTargetConfig:
+    def check_tool_names(self) -> ModelTargetConfig:
+        """Each name fits the provider and is used once, so no tool hides another."""
+
         limit = TOOL_NAME_LIMIT[self.transport]
+        seen: set[str] = set()
         for index, tool in enumerate(self.tools):
             if len(tool.name) > limit:
                 raise ValueError(
                     f"tools[{index}].name is longer than the {limit} characters "
                     f"the {self.transport} API accepts"
                 )
+            if tool.name in seen:
+                raise ValueError(f"tools[{index}].name repeats the name of an earlier tool")
+            seen.add(tool.name)
         return self
 
     @property
@@ -235,7 +241,10 @@ class ModelAgentTarget:
         # The part past a cut could hold what a probe looks for; scoring the rest would
         # pass a probe on half an answer.
         if cut == "unfinished":
-            raise ModelTargetError(f"The {provider} reply is not finished (done is not true)")
+            raise ModelTargetError(
+                f"The {provider} reply is not finished: it does not end with a stop reason "
+                "that marks a complete reply"
+            )
         if cut == "context":
             raise ModelTargetError(
                 f"The {provider} reply was cut because the conversation filled the model's "
@@ -480,8 +489,28 @@ def _anthropic_body(transcript: Transcript, config: ModelTargetConfig) -> dict[s
     return body
 
 
-# Why a reply stopped early: "length" (maxTokens), "context" (context window), or None.
+# Why a reply is not whole: "length" (maxTokens), "context" (context window),
+# "unfinished" (no stop reason that marks a complete reply), or None.
 Cut = str | None
+
+# Stop reasons of a complete reply (None) and of a cut one. Any other value, or none,
+# means the reply is not finished: Anthropic sends one in every reply, and pause_turn
+# asks for the turn to be continued.
+ANTHROPIC_STOPS: dict[str, Cut] = {
+    "end_turn": None,
+    "stop_sequence": None,
+    "tool_use": None,
+    "refusal": None,
+    "max_tokens": "length",
+    "model_context_window_exceeded": "context",
+}
+OPENAI_STOPS: dict[str, Cut] = {
+    "stop": None,
+    "tool_calls": None,
+    "function_call": None,
+    "content_filter": None,
+    "length": "length",
+}
 
 
 def _anthropic_reply(reply: dict[str, Any]) -> tuple[str, list[ToolCall], Cut]:
@@ -494,9 +523,7 @@ def _anthropic_reply(reply: dict[str, Any]) -> tuple[str, list[ToolCall], Cut]:
     text, calls = _observed(
         "\n".join(texts), calls, refused=reply.get("stop_reason") == "refusal"
     )
-    stop = reply.get("stop_reason")
-    cut = {"max_tokens": "length", "model_context_window_exceeded": "context"}.get(stop)
-    return text, calls, cut
+    return text, calls, ANTHROPIC_STOPS.get(reply.get("stop_reason"), "unfinished")
 
 
 def _openai_tools(transcript: Transcript) -> list[dict[str, Any]]:
@@ -570,9 +597,9 @@ def _openai_reply(reply: dict[str, Any]) -> tuple[str, list[ToolCall], Cut]:
     # A refusal arrives as message.refusal, with no content; it is the model's reply.
     refusal = message.get("refusal")
     text = refusal if isinstance(refusal, str) and refusal else message.get("content")
-    refused = choice.get("finish_reason") == "content_filter"
-    cut = "length" if choice.get("finish_reason") == "length" else None
-    return *_observed(text, calls, refused=refused), cut
+    reason = choice.get("finish_reason")
+    observed = _observed(text, calls, refused=reason == "content_filter")
+    return *observed, OPENAI_STOPS.get(reason, "unfinished")
 
 
 # Ollama /api/chat: https://docs.ollama.com/api/chat
