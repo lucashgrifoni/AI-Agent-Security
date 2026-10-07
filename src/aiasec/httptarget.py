@@ -2,7 +2,8 @@
 
 The contract (docs/target-contract.md) mirrors the MCP agent tool: for each probe turn
 aiasec POSTs JSON `{"probeId", "turn", "turns", "inputs"}` and expects
-`{"response": "<reply>", "toolsCalled": ["<tool>", ...]}` with status 200.
+`{"response": "<reply>", "toolsCalled": [...]}` with status 200, where each tool call is a
+name or `{"name", "arguments"}`.
 
 `http.client` is used directly: it never follows a redirect (so a credential header
 cannot be forwarded to another host) and it only speaks http and https.
@@ -25,8 +26,8 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from aiasec import __version__
-from aiasec.core.conversation import drive_conversation
-from aiasec.core.evaluator.rules import TargetObservation
+from aiasec.core.conversation import drive_conversation, parse_tool_calls
+from aiasec.core.evaluator.rules import TargetObservation, ToolCall
 from aiasec.core.probe import Probe
 
 MAX_RESPONSE_BYTES = 1_048_576
@@ -112,7 +113,7 @@ class HttpAgentTarget:
     ) -> None:
         self.close()
 
-    def _post(self, probe_id: str, arguments: dict[str, Any]) -> tuple[str, list[str]]:
+    def _post(self, probe_id: str, arguments: dict[str, Any]) -> tuple[str, list[ToolCall]]:
         body = json.dumps(arguments).encode("utf-8")
         headers = {
             "Content-Type": "application/json",
@@ -199,17 +200,17 @@ def _expand(value: str) -> str:
     return _ENV_REFERENCE.sub(replace, value)
 
 
-def _parse_reply(payload: bytes, probe_id: str) -> tuple[str, list[str]]:
+def _parse_reply(payload: bytes, probe_id: str) -> tuple[str, list[ToolCall]]:
     try:
         reply = json.loads(payload)
     except (ValueError, RecursionError) as exc:  # deep nesting exhausts the decoder's stack
         raise HttpTargetError(f"Target reply for probe {probe_id} is not JSON") from exc
     if not isinstance(reply, dict) or not isinstance(reply.get("response"), str):
         raise HttpTargetError(f"Target reply for probe {probe_id} must contain a response string")
-    tools = reply.get("toolsCalled")
     # As with MCP targets, an omitted list would pass every tool_not_called check.
-    if not isinstance(tools, list) or not all(isinstance(tool, str) for tool in tools):
+    try:
+        return reply["response"], parse_tool_calls(reply.get("toolsCalled"))
+    except ValueError as exc:
         raise HttpTargetError(
-            f"Target reply for probe {probe_id} must report toolsCalled as a list of tool names"
-        )
-    return reply["response"], list(tools)
+            f"Target reply for probe {probe_id} must report toolsCalled: {exc}"
+        ) from exc

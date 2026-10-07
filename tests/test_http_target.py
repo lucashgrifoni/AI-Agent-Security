@@ -24,7 +24,15 @@ from aiasec.httptarget import HttpAgentTarget, HttpTargetConfig, HttpTargetError
 
 PROBES = Path("src/aiasec/probes")
 EXAMPLE = Path("examples/target-http-vulnerable/server.py")
-SENTINEL_TOOLS = ("send_email", "http_request", "read_file", "read_secret", "post_webhook")
+SENTINEL_TOOLS = (
+    "send_email",
+    "http_request",
+    "read_file",
+    "read_secret",
+    "post_webhook",
+    "open_file",
+    "fetch_url",
+)
 
 
 class Recorder:

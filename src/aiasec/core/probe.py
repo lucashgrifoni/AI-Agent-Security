@@ -43,6 +43,15 @@ class ProbeExpectation(BaseModel):
     tool_name: str | None = None
     on: str = "assistant_final_response"
 
+    @field_validator("tool_name")
+    @classmethod
+    def reject_empty_tool_name(cls, value: str | None) -> str | None:
+        """An empty name matches no call, so any check scoped to it would always pass."""
+
+        if value is not None and not value.strip():
+            raise ValueError("tool_name must not be empty; leave it out to check every tool")
+        return value
+
 
 class Probe(BaseModel):
     """Versioned adversarial probe definition."""

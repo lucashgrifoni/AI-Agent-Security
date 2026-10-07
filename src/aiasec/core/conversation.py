@@ -14,11 +14,39 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any
 
-from aiasec.core.evaluator.rules import TargetObservation
+from aiasec.core.evaluator.rules import TargetObservation, ToolCall
 from aiasec.core.probe import Probe, ProbeInput
 
-# One call: (arguments) -> (final text of that turn, tool names called in that turn).
-SendTurn = Callable[[dict[str, Any]], tuple[str, list[str]]]
+# One call: (arguments) -> (final text of that turn, tools called in that turn, as calls
+# or as bare names).
+SendTurn = Callable[[dict[str, Any]], tuple[str, Sequence[ToolCall | str]]]
+
+
+def parse_tool_calls(reported: object) -> list[ToolCall]:
+    """Read the tool calls a target reported for one turn.
+
+    Each entry is a tool name, or an object with a `name` and optional `arguments` (a JSON
+    object, or a string as some SDKs deliver them). Other keys are ignored. Errors never
+    repeat what the target sent: an argument may hold a secret the agent was tricked into
+    leaking.
+    """
+
+    if not isinstance(reported, list):
+        raise ValueError("expected a list of tool names or {name, arguments} objects")
+    calls: list[ToolCall] = []
+    for entry in reported:
+        if isinstance(entry, str):
+            calls.append(ToolCall(name=entry))
+            continue
+        name = entry.get("name") if isinstance(entry, dict) else None
+        arguments = entry.get("arguments") if isinstance(entry, dict) else None
+        if not isinstance(name, str) or not name or not isinstance(arguments, dict | str | None):
+            raise ValueError(
+                "each tool call must be a tool name or an object with a non-empty string name "
+                "and arguments that are an object or a string"
+            )
+        calls.append(ToolCall(name=name, arguments=arguments))
+    return calls
 
 
 def split_turns(inputs: Sequence[ProbeInput]) -> list[list[ProbeInput]]:
@@ -44,14 +72,14 @@ def drive_conversation(probe: Probe, send: SendTurn) -> TargetObservation:
 
     turns = split_turns(probe.inputs)
     history: list[dict[str, Any]] = []
-    tools: list[str] = []
+    calls: list[ToolCall] = []
     reply = ""
     for number, turn in enumerate(turns, start=1):
         history.extend(item.model_dump(exclude_none=True, exclude_defaults=True) for item in turn)
         reply, called = send(
             {"probeId": probe.id, "turn": number, "turns": len(turns), "inputs": list(history)}
         )
-        tools.extend(called)
+        calls.extend(call if isinstance(call, ToolCall) else ToolCall(name=call) for call in called)
         if number < len(turns):
             history.append({"role": "assistant", "content": reply})
-    return TargetObservation(assistant_final_response=reply, tools_called=tools)
+    return TargetObservation(assistant_final_response=reply, tool_calls=calls)
