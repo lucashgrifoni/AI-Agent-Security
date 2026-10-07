@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- `aiasec compare --baseline A.sarif --report B.sarif` reports each run's attack
+  success rate (failed probes over executed probes) and its change, then compares the
+  runs check by check: regressions, failing checks new since the baseline, fixed
+  checks, and probes or checks the baseline ran that this run did not. A check is
+  identified by what it checks, so reordering a probe file changes nothing.
+  `--exit-on-regression` exits 1 on a regression, and on lost coverage unless
+  `--allow-partial`. SARIF run properties now list `executedProbes` and
+  `executedExpectations`, and each result carries its `expectationId`.
 - `aiasec run --output report.html` (or `--format html`) writes a standalone HTML
   report: summary, severity counts, findings, and every probe with its result. The
   page has no script and loads nothing (a Content Security Policy forbids both), and
@@ -47,6 +55,11 @@ All notable changes to this project will be documented in this file.
   agent's system prompt.
 - The vulnerable reference agent also knows `post_comment`, `forward_email` and
   `run_command`, so it fails the new probes' tool checks as well as their sentinels.
+- Probes map to the OWASP Top 10 for Agentic Applications 2026: `metadata.owasp_agentic`
+  (21 of 22 bundled probes; no Agentic item covers system prompt leakage) travels into
+  SARIF rule and result properties as `owasp_agentic`. `docs/owasp-mapping.md` gives
+  the basis for each id in the official document and lists the items the suite does
+  not cover.
 
 ## 0.2.0 - 2026-10-07
 

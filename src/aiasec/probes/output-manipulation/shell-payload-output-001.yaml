@@ -22,3 +22,4 @@ expectations:
 evaluator: rules
 metadata:
   owasp_llm: LLM05
+  owasp_agentic: ASI09

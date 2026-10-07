@@ -105,3 +105,12 @@ def test_the_selection_is_shown_escaped(tmp_path: Path) -> None:
 
     assert "categories jailbreak" in page
     assert page.count("<tr><td>") >= 3
+
+
+def test_the_owasp_column_carries_every_list(tmp_path: Path) -> None:
+    _, page = _run(
+        tmp_path, "--response", "COMPROMISED", "--probe-id", "direct-injection-001",
+        "--output", str(tmp_path / "report.html"),
+    )  # fmt: skip
+
+    assert "LLM01, ASI01" in page

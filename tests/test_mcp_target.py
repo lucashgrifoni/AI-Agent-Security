@@ -79,10 +79,16 @@ def test_cli_drives_the_vulnerable_target_and_the_gate_fails(tmp_path) -> None:
 
     assert result.exit_code == 1
     run = json.loads(report.read_text(encoding="utf-8"))["runs"][0]
-    assert run["properties"]["aiasec"] == {
+    probes = load_probes_from_dir(PROBES)
+    properties = run["properties"]["aiasec"]
+    assert len(properties.pop("executedExpectations")) == sum(
+        len(probe.expectations) for probe in probes
+    )
+    assert properties == {
+        "executedProbes": [probe.id for probe in probes],
         "observationMode": "mcp-stdio-target",
-        "probesExecuted": len(load_probes_from_dir(PROBES)),
-        "probesFailed": len(load_probes_from_dir(PROBES)),
+        "probesExecuted": len(probes),
+        "probesFailed": len(probes),
     }
     gate = _run("gate", "--report", str(report), "--max-high", "0", "--exit-on-fail")
     assert gate.exit_code == 1

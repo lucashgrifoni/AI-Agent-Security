@@ -91,7 +91,11 @@ def render_html(
                 _code(finding.probe_id),
                 finding.severity,
                 finding.category,
-                ", ".join(tag for tag in (finding.owasp_llm, finding.owasp_mcp) if tag),
+                ", ".join(
+                    tag
+                    for tag in (finding.owasp_llm, finding.owasp_mcp, finding.owasp_agentic)
+                    if tag
+                ),
                 finding.message,
                 _code(finding.source or ""),
             )
