@@ -89,7 +89,7 @@ All notable changes to this project will be documented in this file.
   OWASP MCP06. The vulnerable reference targets now report arguments.
 - `aiasec run` and `aiasec probes list` select probes with `--category`,
   `--min-severity` and `--probe-id`, combined with AND. A category or id that matches
-  no loaded probe, or a selection that matches nothing, exits 2. A filtered run records
+  no loaded probe, an option given with no name, or a selection that matches nothing, exits 2. A filtered run records
   the filters in SARIF (`runs[].properties.aiasec.selection`) and in the Markdown
   summary; an unfiltered report is unchanged.
 - README no longer says HTTP targets are left for later.

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from aiasec.cli.app import app
@@ -146,3 +147,18 @@ def test_the_gate_reads_a_filtered_report_unchanged(tmp_path) -> None:
 
     assert result.exit_code == 0
     assert json.loads(result.stdout)["probesExecuted"] == 1
+
+
+@pytest.mark.parametrize("option", ["--probe-id", "--category"])
+@pytest.mark.parametrize("value", ["", "   ", ",", " , "])
+def test_an_option_given_with_no_names_is_refused(tmp_path, option: str, value: str) -> None:
+    # An unset shell variable must not turn a filtered run into a run of the whole suite.
+    code, document = _sarif(tmp_path, option, value)
+
+    assert code == 2
+    assert document == {}
+
+
+@pytest.mark.parametrize("option", ["--probe-id", "--category"])
+def test_probes_list_refuses_an_option_with_no_names(option: str) -> None:
+    assert _run("probes", "list", option, "").exit_code == 2
