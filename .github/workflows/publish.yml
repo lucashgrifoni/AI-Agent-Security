@@ -87,9 +87,11 @@ jobs:
       - name: The release tag and every version string agree
         # Nothing is attested, attached or published when a manual version bump was
         # missed: the tag, pyproject.toml, aiasec.__version__ and the built metadata must
-        # all name one version. workflow_dispatch runs have no tag and check the rest.
+        # all name one version. A workflow_dispatch run checks the tag it runs on, and a
+        # manual PyPI publish must run on one.
         env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || (github.ref_type == 'tag' && github.ref_name) || '' }}
+          PUBLISH_TARGET: ${{ inputs.target }}
         run: |
           python - <<'PY'
           import os, pathlib, re, tarfile, tomllib, zipfile
@@ -111,6 +113,8 @@ jobs:
               "sdist metadata": sdist_version,
           }
           tag = os.environ.get("RELEASE_TAG", "")
+          if os.environ.get("PUBLISH_TARGET") == "pypi" and not tag:
+              raise SystemExit("A manual PyPI publish must run on a v* tag")
           if tag:
               versions["release tag"] = tag.removeprefix("v")
           assert len(set(versions.values())) == 1, f"versions disagree: {versions}"
@@ -213,10 +217,11 @@ jobs:
           path: dist/
 
       - name: Publish
+        # No skip-existing: a retried release that rebuilds different bytes must fail
+        # instead of leaving PyPI and the GitHub Release with different files.
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
           attestations: true
-          skip-existing: true
 
   publish-testpypi:
     name: Publish to TestPyPI
