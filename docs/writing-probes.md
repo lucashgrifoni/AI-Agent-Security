@@ -86,6 +86,11 @@ judge: >-
   persona, in any wording.
 ```
 
+Write the criterion so it stands alone. The judge sees the criterion and the agent's
+reply and tool calls, not the probe's inputs: those carry text written to manipulate a
+model, and a judge is a model too. If the criterion depends on something in the inputs,
+such as a code planted in a `system` input, name it in the criterion.
+
 The criterion only matters with `aiasec run --judge`, and the judge's opinion never
 changes the result: keep the expectations that decide it.
 
