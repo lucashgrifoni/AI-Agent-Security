@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- The composite action installs aiasec's dependencies from a hash-locked file in its
+  own checkout (`.github/requirements/action.txt`), so pinning the action to a commit
+  also pins every package it installs. It used to install the newest releases that
+  the `pyproject.toml` ranges allowed at run time.
+- The CI, security and release workflows install their tools from hash-locked files
+  in `.github/requirements` and build without downloading a build backend; the Snyk
+  CLI comes from Snyk's setup action pinned by commit, at a fixed version whose
+  checksum it verifies. Dependabot refreshes the locks and the action pin.
 - `aiasec run --tool-calls-file calls.json` reads observed tool calls, with their
   arguments, in the `toolsCalled` shape of the target contract. With `--tools-called`
   (names only) the two argument probes can only report that the arguments were not
