@@ -9,7 +9,7 @@ The target is an MCP server that speaks JSON-RPC over stdio, one JSON message pe
 line. It exposes one tool that runs the agent on one probe. aiasec:
 
 1. starts the command from the target config (only with `--execute`),
-2. sends `initialize` and `notifications/initialized`,
+2. agrees on a protocol version (see [Protocol version](#protocol-version)),
 3. calls `tools/list` and fails unless the agent tool is listed,
 4. calls the agent tool once per probe with `tools/call`,
 5. closes stdin, waits for the process to exit, and stops it if it does not.
@@ -23,7 +23,8 @@ line. It exposes one tool that runs the agent on one probe. aiasec:
   "cwd": null,
   "env": {},
   "agentTool": "aiasec_agent",
-  "timeoutSeconds": 30
+  "timeoutSeconds": 30,
+  "protocol": "auto"
 }
 ```
 
@@ -34,6 +35,7 @@ line. It exposes one tool that runs the agent on one probe. aiasec:
 | `env` | `{}` | extra environment variables, merged over aiasec's own environment |
 | `agentTool` | `aiasec_agent` | name of the tool that runs the agent |
 | `timeoutSeconds` | `30` | longest wait for any single message; a silent target fails the run (1 to 600) |
+| `protocol` | `auto` | `auto` probes the server's MCP era; `modern` requires 2026-07-28; `legacy` skips the probe and uses `initialize` |
 
 The child process inherits aiasec's environment. Do not run aiasec with secrets in its
 environment that the target must not see.
@@ -92,9 +94,28 @@ end to end; they say nothing about how a real model behaves.
 
 ## Protocol version
 
-aiasec uses the `initialize` handshake and sends `protocolVersion: "2024-11-05"`.
-The current MCP revision, 2026-07-28, replaced the handshake with a protocol version
-declared on every request plus a `server/discover` RPC
-([MCP versioning](https://modelcontextprotocol.io/specification/versioning)). A harness
-that implements only 2026-07-28 cannot be tested yet. A harness that also accepts the
-handshake-based revisions (2025-11-25 and earlier) can.
+aiasec speaks both MCP eras and follows the stdio backward-compatibility rules of the
+2026-07-28 revision ([versioning](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning),
+[stdio](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/stdio#backward-compatibility)).
+
+With `protocol: auto` (the default), aiasec first sends `server/discover` with
+`io.modelcontextprotocol/protocolVersion: "2026-07-28"` in `_meta`:
+
+| Reply to the probe | aiasec concludes | Then |
+|---|---|---|
+| a `DiscoverResult` listing `2026-07-28` | modern server | every request carries `_meta` with `protocolVersion`, `clientInfo` and `clientCapabilities`; no handshake |
+| `UnsupportedProtocolVersionError` (`-32022`) or a `DiscoverResult` without `2026-07-28` | modern server | uses a handshake-based version from the advertised list if there is one, otherwise fails with the server's list |
+| another error in the MCP-reserved range (`-32020` to `-32099`) | modern server that refused the probe | fails the run |
+| any other error, or no reply within `min(5, timeoutSeconds)` seconds | legacy server | `initialize` with `2025-11-25`, then `notifications/initialized`; a late reply to the probe is discarded |
+
+A modern harness must also return `"resultType": "complete"`. A result without
+`resultType` counts as complete, as the spec requires for earlier revisions. An
+`input_required` result (multi round-trip requests) or an unknown type fails the run:
+aiasec does not answer elicitation or sampling requests.
+
+Use `protocol: legacy` for a legacy server that ignores unknown methods instead of
+answering them, so each run skips the probe wait. Use `protocol: modern` to make a
+run fail unless the target speaks 2026-07-28.
+
+The reference targets are dual-era: they answer `server/discover` and modern requests,
+and still accept `initialize`. `aiasec run` prints the version it agreed on.
