@@ -204,8 +204,9 @@ For each probe turn aiasec sends the conversation so far as one request. The mod
 text is the reply. **The tool calls it asks for are recorded with their arguments and
 never executed**: the turn ends there, so a model that would call `send_email` fails
 the probe without anything being sent. On the next turn of a multi-turn probe, those
-calls are replayed after the reply that made them, each followed by a result saying
-aiasec did not run the tool, so the model sees the conversation it actually had.
+calls are replayed in the reply that made them, all in one assistant message as the API
+returned them, followed by one result each saying aiasec did not run the tool, so the
+model sees the conversation it actually had.
 
 Probe inputs reach the model like this:
 
