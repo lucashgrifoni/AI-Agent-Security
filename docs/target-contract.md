@@ -226,7 +226,10 @@ The API key is read from the environment when the run starts, is sent only to `u
 and only over https or to a loopback address: a config that would send it over plain
 http to another host is rejected. Errors never repeat it. The API answers that are not
 200 fail the run with the status and the provider's error message; replies that do not
-have the provider's shape fail it too.
+have the provider's shape fail it too, and so does a reply with neither text nor a tool
+call, which would otherwise pass every pattern check. A refusal the API signals
+(Anthropic `stop_reason` `refusal`, OpenAI `finish_reason` `content_filter`) counts
+as an empty reply.
 
 `--execute` is required here as well: it is the opt-in to send adversarial probes to
 the model, and each request is billed by the provider.

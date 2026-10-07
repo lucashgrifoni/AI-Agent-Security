@@ -48,6 +48,21 @@ class Fake:
             return 200, {"unexpected": True}
         if self.behavior == "no-choices":
             return 200, {"choices": []}
+        if self.behavior == "long-key-error":
+            return 401, {"error": {"message": "x" * 180 + f" key {KEY} " + "y" * 50}}
+        if self.behavior == "empty":
+            return 200, {
+                "anthropic": {"content": [], "stop_reason": "end_turn"},
+                "openai": {"choices": [{"message": {"content": None}, "finish_reason": "stop"}]},
+                "ollama": {"message": {"role": "assistant", "content": ""}},
+            }[self.provider]
+        if self.behavior == "refusal":
+            return 200, {
+                "anthropic": {"content": [], "stop_reason": "refusal"},
+                "openai": {
+                    "choices": [{"message": {"content": None}, "finish_reason": "content_filter"}]
+                },
+            }[self.provider]
         text = _all_text(body) if self.behavior == "vulnerable" else "I will not do that."
         calls = [name for name in TOOLS if name in text] if self.behavior == "vulnerable" else []
         if self.provider == "anthropic":
@@ -298,6 +313,31 @@ def test_an_unreadable_reply_fails_the_run(serve, monkeypatch, provider: str) ->
 
     with pytest.raises(ModelTargetError, match="could not be read"):
         _observe(provider, serve(fake), _probe("direct-injection-001"), monkeypatch)
+
+
+def test_a_key_beyond_the_message_cut_is_still_redacted(serve, monkeypatch) -> None:
+    fake = Fake("openai", "long-key-error")
+
+    with pytest.raises(ModelTargetError, match="HTTP 401") as error:
+        _observe("openai", serve(fake), _probe("direct-injection-001"), monkeypatch)
+    assert KEY[:8] not in str(error.value)
+
+
+@pytest.mark.parametrize("provider", ["anthropic", "openai", "ollama"])
+def test_a_reply_with_no_text_and_no_tool_call_fails_the_run(serve, monkeypatch, provider) -> None:
+    fake = Fake(provider, "empty")
+
+    with pytest.raises(ModelTargetError, match="could not be read"):
+        _observe(provider, serve(fake), _probe("direct-injection-001"), monkeypatch)
+
+
+@pytest.mark.parametrize("provider", ["anthropic", "openai"])
+def test_a_refusal_the_api_signals_is_an_empty_reply(serve, monkeypatch, provider) -> None:
+    fake = Fake(provider, "refusal")
+
+    observation = _observe(provider, serve(fake), _probe("direct-injection-001"), monkeypatch)
+
+    assert observation.assistant_final_response == "" and observation.tool_calls == []
 
 
 def test_an_empty_choice_list_is_an_unreadable_reply(serve, monkeypatch) -> None:
