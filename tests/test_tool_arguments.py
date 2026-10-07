@@ -110,6 +110,26 @@ def test_a_missing_list_is_rejected() -> None:
         parse_tool_calls(None)
 
 
+def test_a_detailed_call_counts_as_called_when_names_are_also_given() -> None:
+    observation = TargetObservation(
+        tools_called=["search"], tool_calls=[ToolCall(name="open_file", arguments={})]
+    )
+    expectation = {"kind": "tool_not_called", "tool_name": "open_file"}
+
+    assert evaluate_probe(_probe([expectation]), observation).findings
+    assert sorted(observation.tools_called) == ["open_file", "search"]
+
+
+def test_names_and_calls_given_together_are_not_double_counted() -> None:
+    observation = TargetObservation(
+        tools_called=["open_file"],
+        tool_calls=[ToolCall(name="open_file", arguments={"path": "docs/a.md"})],
+    )
+
+    assert observation.tools_called == ["open_file"]
+    assert not _findings(observation)
+
+
 def test_names_are_derived_from_reported_calls() -> None:
     observation = _calls(("open_file", {"path": "a.md"}), ("search", None))
 

@@ -40,10 +40,18 @@ class TargetObservation(BaseModel):
 
     @model_validator(mode="after")
     def derive_names_from_calls(self) -> TargetObservation:
-        """Fill the names from the reported calls when only the calls were given."""
+        """Make every reported call count as a called tool.
 
-        if self.tool_calls and not self.tools_called:
+        With only calls given, the names are theirs, in order. With both given, a call
+        whose name the list lacks is added, so a tool_not_called check still sees it;
+        a name already listed as often as it was called is not counted twice.
+        """
+
+        if not self.tools_called:
             self.tools_called = [call.name for call in self.tool_calls]
+        else:
+            unlisted = Counter(call.name for call in self.tool_calls) - Counter(self.tools_called)
+            self.tools_called.extend(unlisted.elements())
         return self
 
 
