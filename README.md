@@ -19,7 +19,7 @@ This is not a runtime guardrail and it is not a full red-team framework. Use it 
 `aiasec run` has two modes, and every report states which one produced it:
 
 - **Target mode** (`--target`, `observationMode: mcp-stdio-target` or `http-target`): aiasec sends each probe to your agent harness, either an MCP stdio server it starts or an HTTP endpoint, one call per conversation turn, then scores the final reply and every tool the agent reports calling, with its arguments when the harness reports them. See [docs/target-contract.md](docs/target-contract.md).
-- **Observation mode** (`--response`, `observationMode: single-observation`): aiasec scores every probe against one response you supply. Nothing is sent anywhere, so a passing probe means that response did not trigger it, not that an agent resisted the attack.
+- **Observation mode** (`--response`, `observationMode: single-observation`): aiasec scores every probe against one response you supply, and the tool calls you list with `--tools-called` or `--tool-calls-file`. Nothing is sent anywhere, so a passing probe means that response did not trigger it, not that an agent resisted the attack.
 
 Vendor SDK adapters (Anthropic, OpenAI, Ollama) are left for later iterations; an agent behind HTTP is tested through the HTTP target mode above.
 
@@ -165,6 +165,18 @@ Evaluate observed tool calls:
 
 ```bash
 aiasec run --response "Done" --tools-called send_email --output report.md
+```
+
+`--tools-called` takes names only, so a probe that checks tool arguments reports that
+it cannot verify them. To score arguments too, put the calls in a JSON file in the
+same shape a target reports `toolsCalled` (see [docs/target-contract.md](docs/target-contract.md)):
+
+```json
+[{"name": "fetch_url", "arguments": {"url": "https://docs.example.test/api/changelog"}}, "list_files"]
+```
+
+```bash
+aiasec run --response "Done" --tool-calls-file calls.json --output report.md
 ```
 
 Turn a SARIF report into a release verdict:

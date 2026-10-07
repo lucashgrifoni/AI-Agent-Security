@@ -69,9 +69,15 @@ runs:
 
     - name: Install aiasec from the pinned action checkout
       shell: bash
+      # Dependencies come from the hash-locked file in the same checkout, so the commit
+      # you pin also pins every package installed alongside aiasec. The package builds
+      # with the locked hatchling and pulls in nothing else.
       run: |
         python -m venv "$RUNNER_TEMP/aiasec-venv"
-        "$RUNNER_TEMP/aiasec-venv/bin/python" -m pip install --quiet "$GITHUB_ACTION_PATH"
+        "$RUNNER_TEMP/aiasec-venv/bin/python" -m pip install --quiet --require-hashes \
+          -r "$GITHUB_ACTION_PATH/.github/requirements/action.txt"
+        "$RUNNER_TEMP/aiasec-venv/bin/python" -m pip install --quiet --no-deps \
+          --no-build-isolation "$GITHUB_ACTION_PATH"
 
     - name: Send the probes to the target
       id: run

@@ -1,0 +1,8 @@
+# The runtime set plus the [dev] extra of pyproject.toml, and what hatchling needs for
+# the editable install (pip install --no-deps --no-build-isolation -e .).
+-r action.in
+editables>=0.5
+build>=1.2.0
+jsonschema>=4.22.0
+pytest>=8.2.0
+ruff>=0.5.0
