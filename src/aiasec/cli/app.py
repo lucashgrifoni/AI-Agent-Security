@@ -12,7 +12,8 @@ import yaml
 from pydantic import ValidationError
 
 from aiasec import __version__
-from aiasec.core.evaluator.rules import TargetObservation
+from aiasec.core.conversation import parse_tool_calls
+from aiasec.core.evaluator.rules import TargetObservation, ToolCall
 from aiasec.core.gate import SEVERITY_ORDER, GateThresholds, gate_report
 from aiasec.core.probe import Probe, load_probes_from_dir
 from aiasec.core.runner import run_probes, run_probes_against
@@ -185,6 +186,44 @@ def _parse_tools(tools_called: str | None) -> list[str]:
     return [tool.strip() for tool in tools_called.split(",") if tool.strip()]
 
 
+def _read_tool_calls(tool_calls_file: Path | None) -> list[ToolCall]:
+    """Read observed tool calls in the target contract's toolsCalled shape.
+
+    Errors never repeat the file's content: an argument may hold the secret the agent
+    was tricked into sending.
+    """
+
+    if tool_calls_file is None:
+        return []
+    try:
+        # Deep nesting exhausts the decoder's stack with RecursionError, not ValueError.
+        reported = json.loads(tool_calls_file.read_text(encoding="utf-8"))
+        return parse_tool_calls(reported)
+    except (OSError, ValueError, RecursionError) as exc:
+        if isinstance(exc, OSError):
+            reason = "it cannot be read"
+        elif isinstance(exc, (json.JSONDecodeError, UnicodeDecodeError, RecursionError)):
+            reason = "it is not JSON"
+        else:
+            reason = str(exc)
+        typer.echo(f"Invalid tool calls file {tool_calls_file}: {reason}.", err=True)
+        raise typer.Exit(code=2) from exc
+
+
+def _validation_message(exc: ValidationError) -> str:
+    """One line per invalid field, without the values or pydantic's documentation links.
+
+    A rejected value can be a credential (a header, an env entry), and the links say
+    nothing about aiasec's config.
+    """
+
+    lines = []
+    for error in exc.errors(include_url=False, include_input=False):
+        field = ".".join(str(part) for part in error["loc"]) or "config"
+        lines.append(f"  {field}: {error['msg'].removeprefix('Value error, ')}")
+    return "\n".join(lines)
+
+
 def _resolve_format(output: Path, output_format: OutputFormat) -> OutputFormat:
     if output_format is not OutputFormat.auto:
         return output_format
@@ -207,7 +246,10 @@ def _load_fixture_transport(fixture: Path):
 def _load_config(config: Path) -> McpStdioConfig:
     try:
         return load_stdio_config(config)
-    except (OSError, ValueError, ValidationError) as exc:
+    except ValidationError as exc:
+        typer.echo(f"Invalid MCP stdio config {config}:\n{_validation_message(exc)}", err=True)
+        raise typer.Exit(code=2) from exc
+    except (OSError, ValueError) as exc:
         raise typer.BadParameter(str(exc), param_hint="--config") from exc
 
 
@@ -226,6 +268,9 @@ def _run_against_target(
 ) -> tuple[list[ProbeRunResult], str]:
     try:
         config = _load_target_config(target)
+    except ValidationError as exc:
+        typer.echo(f"Invalid target config {target}:\n{_validation_message(exc)}", err=True)
+        raise typer.Exit(code=2) from exc
     except (OSError, ValueError) as exc:
         typer.echo(f"Invalid target config {target}: {exc}", err=True)
         raise typer.Exit(code=2) from exc
@@ -303,6 +348,16 @@ def run(
         str | None,
         typer.Option("--tools-called", help="Comma-separated observed tool names."),
     ] = None,
+    tool_calls_file: Annotated[
+        Path | None,
+        typer.Option(
+            "--tool-calls-file",
+            help="JSON list of observed tool calls: names or {name, arguments} objects.",
+            exists=True,
+            dir_okay=False,
+            readable=True,
+        ),
+    ] = None,
     output_format: Annotated[
         OutputFormat,
         typer.Option("--format", help="Report format."),
@@ -327,12 +382,16 @@ def run(
 ) -> None:
     """Run probes against a live MCP target or a supplied observation."""
 
-    if target is not None and (response, response_file, tools_called) != (None, None, None):
+    observed = (response, response_file, tools_called, tool_calls_file)
+    if target is not None and any(value is not None for value in observed):
         typer.echo(
             "--target sends each probe to the target; it cannot be combined with "
-            "--response, --response-file, or --tools-called.",
+            "--response, --response-file, --tools-called, or --tool-calls-file.",
             err=True,
         )
+        raise typer.Exit(code=2)
+    if tools_called is not None and tool_calls_file is not None:
+        typer.echo("Use either --tools-called or --tool-calls-file, not both.", err=True)
         raise typer.Exit(code=2)
 
     probes = _load_probes(probes_dir)
@@ -351,6 +410,7 @@ def run(
         observation = TargetObservation(
             assistant_final_response=_read_response(response, response_file),
             tools_called=_parse_tools(tools_called),
+            tool_calls=_read_tool_calls(tool_calls_file),
         )
         results = run_probes(probes, observation)
         observation_mode = SINGLE_OBSERVATION_MODE
