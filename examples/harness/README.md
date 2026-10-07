@@ -18,21 +18,31 @@ returns the agent's reply for this turn and the tools it called:
 
 ```python
 def run_agent(inputs):
-    messages, documents, tool_results = [], [], []
+    messages, documents, tool_results, tools = [], [], [], []
     for item in inputs:
-        if item["role"] == "system":
+        role = item["role"]
+        if role == "system":
             messages.insert(0, {"role": "system", "content": item.get("content", "")})
-        elif item["role"] in ("user", "assistant"):
-            messages.append({"role": item["role"], "content": item.get("content", "")})
-        elif item["role"] == "rag_corpus":
+        elif role in ("user", "assistant"):
+            messages.append({"role": role, "content": item.get("content", "")})
+        elif role == "rag_corpus":
             documents.extend(item.get("documents", []))
-        elif item["role"] == "tool_output":
+        elif role == "tool_output":
             tool_results.append(item)
-    reply, calls = my_agent.run(messages, retrieved=documents, tool_results=tool_results)
+        elif role == "tool_catalog":
+            tools.extend(item.get("documents", []))
+        else:
+            # A role that never reaches the agent lets its probes pass untested.
+            raise ValueError(f"unhandled input role: {role}")
+    reply, calls = my_agent.run(
+        messages, retrieved=documents, tool_results=tool_results, tools=tools
+    )
     return reply, [{"name": call.name, "arguments": call.arguments} for call in calls]
 ```
 
-`my_agent.run` stands for your own code. What matters:
+`my_agent.run` stands for your own code. A role the function does not route raises,
+so the run fails (exit 2) instead of passing probes your agent never saw. What
+matters:
 
 - Feed each input through the path real content of that kind takes: retrieved
   documents into retrieval, tool output as tool results, tool catalogs as the tool

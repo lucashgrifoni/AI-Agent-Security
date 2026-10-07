@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ast
 import json
+import re
 import socket
 import subprocess
 import sys
@@ -20,8 +21,10 @@ import pytest
 from typer.testing import CliRunner
 
 from aiasec.cli.app import app
+from aiasec.core.probe import Probe, load_probes_from_dir
 
 HARNESS = Path("examples/harness")
+PROBES = Path("src/aiasec/probes")
 TEMPLATES = sorted(HARNESS.glob("*.py"))
 
 
@@ -82,6 +85,37 @@ def http_template() -> Iterator[str]:
     finally:
         process.terminate()
         process.wait(timeout=5)
+
+
+def _readme_example() -> str:
+    readme = (HARNESS / "README.md").read_text(encoding="utf-8")
+    match = re.search(r"```python\n(.*?)```", readme, re.S)
+    assert match, "examples/harness/README.md lost its adapter example"
+    return match.group(1)
+
+
+@pytest.mark.parametrize("probe", load_probes_from_dir(PROBES), ids=lambda probe: probe.id)
+def test_the_readme_example_hands_every_input_to_the_agent(probe: Probe) -> None:
+    """A copied adapter that drops a role lets that role's probes pass untested."""
+
+    received: list[object] = []
+
+    class FakeAgent:
+        def run(self, *args: object, **kwargs: object) -> tuple[str, list[object]]:
+            received.append((args, kwargs))
+            return "ok", []
+
+    namespace: dict[str, object] = {"my_agent": FakeAgent()}
+    exec(_readme_example(), namespace)  # noqa: S102 - this repository's own example
+    inputs = [item.model_dump(exclude_none=True) for item in probe.inputs]
+
+    namespace["run_agent"](inputs)  # type: ignore[operator]
+
+    handed_over = json.dumps(received)
+    for item in probe.inputs:
+        texts = [item.content, *(doc.injected for doc in item.documents)]
+        for text in filter(None, texts):
+            assert json.dumps(text)[1:-1] in handed_over, (probe.id, item.role)
 
 
 def test_an_unconnected_http_template_fails_the_run(tmp_path: Path, http_template: str) -> None:
