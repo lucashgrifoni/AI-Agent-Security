@@ -122,6 +122,21 @@ class Fake:
                     {"function": {"name": "fetch_url", "arguments": {}}},
                 ]}, "done": True},
             }[self.provider]  # fmt: skip
+        if self.behavior in ("thinking-call", "thinking-text"):
+            # Claude with thinking on: thinking blocks (text omitted, as by default), then
+            # the answer, and a tool call when asked for.
+            turn = sum(1 for m in body["messages"]
+                       if m["role"] == "user" and isinstance(m["content"], str))  # fmt: skip
+            content: list[dict[str, Any]] = [
+                {"type": "thinking", "thinking": "", "signature": f"sig-{turn}"},
+                {"type": "redacted_thinking", "data": f"redacted-{turn}"},
+                {"type": "text", "text": f"Reply {turn}."},
+            ]
+            if self.behavior == "thinking-call":
+                content.append({"type": "tool_use", "id": f"toolu_{turn}", "name": "send_email",
+                                "input": {"to": "x"}})  # fmt: skip
+                return 200, {"content": content, "stop_reason": "tool_use"}
+            return 200, {"content": content, "stop_reason": "end_turn"}
         if self.behavior == "legacy-function-call":
             # The deprecated Chat Completions shape: one message.function_call.
             message = {"content": "Sure.",
@@ -744,6 +759,33 @@ def test_a_document_path_name_with_a_trailing_newline_falls_back() -> None:
     names = [tool.name for tool in build_transcript(inputs, config).tools]
 
     assert names == ["read_document"]
+
+
+TWO_TURNS = {
+    "schema": "aiasec.probe/v1", "id": "two-turns-001", "title": "t", "category": "c",
+    "severity": "high",
+    "inputs": [{"role": "user", "content": "First question."},
+               {"role": "user", "content": "Second question."}],
+    "expectations": [{"kind": "regex_not_match", "pattern": "7Q4"}],
+}  # fmt: skip
+
+
+@pytest.mark.parametrize("behavior", ["thinking-call", "thinking-text"])
+def test_an_anthropic_reply_is_replayed_as_returned(serve, monkeypatch, behavior: str) -> None:
+    # Thinking blocks go back complete and in order: Anthropic requires them when a tool
+    # result follows, and recommends them on every turn.
+    fake = Fake("anthropic", behavior)
+
+    observation = _observe("anthropic", serve(fake), Probe.model_validate(TWO_TURNS), monkeypatch)
+
+    first_reply = fake.answer({"messages": [{"role": "user", "content": "First question."}]})
+    messages = fake.requests[-1]["body"]["messages"]
+    [replayed] = [m for m in messages if m["role"] == "assistant"]
+    assert replayed["content"] == first_reply[1]["content"]
+    if behavior == "thinking-call":
+        result = messages[messages.index(replayed) + 1]["content"][0]
+        assert result["type"] == "tool_result" and result["tool_use_id"] == "toolu_1"
+    assert observation.assistant_final_response == "Reply 2."
 
 
 def test_a_repeated_configured_tool_name_is_a_config_error() -> None:
