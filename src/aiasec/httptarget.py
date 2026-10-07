@@ -210,6 +210,9 @@ def post_json(
         raise HttpTargetError(f"Target timed out after {timeout} s") from error
     if isinstance(error, (OSError, http.client.HTTPException)):
         raise HttpTargetError(f"HTTP request to the target failed: {error}") from error
+    if isinstance(error, ValueError):
+        # http.client quotes an invalid header value in its message; never repeat it.
+        raise HttpTargetError("HTTP request to the target has an invalid header") from None
     if error is not None:
         raise error
 
@@ -225,6 +228,13 @@ def _expand(value: str) -> str:
         if name not in os.environ:
             raise HttpTargetError(
                 f"Header references environment variable {name}, which is not set"
+            )
+        # http.client would reject the header with an error that quotes the value,
+        # and the value is usually a credential.
+        if any(ch in os.environ[name] for ch in "\r\n\x00"):
+            raise HttpTargetError(
+                f"Environment variable {name} holds a line break or NUL, so it cannot go "
+                "in a header"
             )
         return os.environ[name]
 

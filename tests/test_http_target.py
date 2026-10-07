@@ -157,6 +157,20 @@ def test_header_values_come_from_the_environment(serve, monkeypatch) -> None:
     assert recorder.headers[0]["Authorization"] == "Bearer token-from-env"
 
 
+@pytest.mark.parametrize("bad", ["\n", "\r\n"])
+def test_an_environment_header_value_that_would_split_the_request_is_refused_unechoed(
+    serve, monkeypatch, bad: str
+) -> None:
+    url, recorder = serve("good")
+    monkeypatch.setenv("AIASEC_TEST_TOKEN", "token-secret-value" + bad)
+    config = _config(url, headers={"Authorization": "Bearer ${AIASEC_TEST_TOKEN}"})
+
+    with pytest.raises(HttpTargetError, match="AIASEC_TEST_TOKEN") as error:
+        HttpAgentTarget.start(config)
+    assert "token-secret-value" not in str(error.value)
+    assert recorder.bodies == []
+
+
 def test_a_missing_environment_variable_fails_before_any_request(serve, monkeypatch) -> None:
     url, recorder = serve("good")
     monkeypatch.delenv("AIASEC_TEST_MISSING", raising=False)

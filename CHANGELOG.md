@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- An HTTP target header that takes its value from an environment variable holding a
+  line break now fails before any request, naming the variable. It used to fail
+  inside `http.client` with an error that quoted the value, usually a credential, into
+  the terminal or CI log.
 - Model API targets: a target config with `transport` `anthropic`, `openai` (or a
   compatible server) or `ollama` sends each probe turn straight to the model with your
   system prompt and tool definitions. Tool calls the model asks for are recorded with
