@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 
 import pytest
+import yaml
 from typer.testing import CliRunner
 
 from aiasec.cli.app import app
@@ -100,7 +101,7 @@ def test_a_probe_new_to_the_suite_that_fails_counts(tmp_path: Path) -> None:
     code, result = _compare(baseline, current, "--exit-on-regression")
 
     assert code == 1
-    assert [item["probeId"] for item in result["newProbeFindings"]] == [PROMPT]
+    assert [item["probeId"] for item in result["newFindings"]] == [PROMPT]
     assert result["regressions"] == []
 
 
@@ -138,3 +139,75 @@ def test_a_report_that_does_not_say_what_ran_cannot_be_compared(
 
     assert code == 2
     assert "which probes" in result["output"]
+
+
+def _probe_file(directory: Path, expectations: list[str]) -> Path:
+    """A one-probe suite whose expectations forbid the given markers, in this order."""
+
+    probe = {
+        "schema": "aiasec.probe/v1",
+        "id": "two-checks-001",
+        "title": "t",
+        "category": "custom",
+        "severity": "high",
+        "inputs": [{"role": "user", "content": "x"}],
+        "expectations": [{"kind": "regex_not_match", "pattern": m} for m in expectations],
+    }
+    (directory / "custom").mkdir(parents=True, exist_ok=True)
+    (directory / "custom" / "two-checks-001.yaml").write_text(
+        yaml.safe_dump(probe), encoding="utf-8"
+    )
+    return directory
+
+
+def test_reordering_a_probe_s_expectations_changes_nothing(tmp_path: Path) -> None:
+    first = _probe_file(tmp_path / "a", ["ALPHA", "BETA"])
+    second = _probe_file(tmp_path / "b", ["BETA", "ALPHA"])
+    baseline = _report(tmp_path, "baseline", "ALPHA BETA", "--probes", str(first))
+    current = _report(tmp_path, "current", "ALPHA BETA", "--probes", str(second))
+
+    code, result = _compare(baseline, current, "--exit-on-regression")
+
+    assert code == 0, result
+    assert result["regressions"] == [] and result["fixed"] == [] and result["newFindings"] == []
+
+
+def test_a_removed_check_is_lost_coverage_not_a_fix(tmp_path: Path) -> None:
+    both = _probe_file(tmp_path / "a", ["ALPHA", "BETA"])
+    one = _probe_file(tmp_path / "b", ["ALPHA"])
+    baseline = _report(tmp_path, "baseline", "BETA", "--probes", str(both))
+    current = _report(tmp_path, "current", "BETA", "--probes", str(one))
+
+    code, result = _compare(baseline, current, "--exit-on-regression")
+
+    assert code == 1
+    assert result["verdict"] == "INCOMPLETE"
+    assert result["fixed"] == []
+    assert [item["expectation"] for item in result["notEvaluated"]] == ["regex_not_match"]
+
+
+def test_a_report_with_several_runs_cannot_be_compared(tmp_path: Path) -> None:
+    report = _report(tmp_path, "one", "fine")
+    document = json.loads(report.read_text(encoding="utf-8"))
+    document["runs"] = document["runs"] * 2
+    double = tmp_path / "double.sarif"
+    double.write_text(json.dumps(document), encoding="utf-8")
+
+    code, result = _compare(report, double)
+
+    assert code == 2
+    assert "one run" in result["output"]
+
+
+def test_a_probe_listed_twice_cannot_be_compared(tmp_path: Path) -> None:
+    report = _report(tmp_path, "one", "fine")
+    document = json.loads(report.read_text(encoding="utf-8"))
+    aiasec = document["runs"][0]["properties"]["aiasec"]
+    aiasec["executedProbes"] = aiasec["executedProbes"] * 2
+    doubled = tmp_path / "doubled.sarif"
+    doubled.write_text(json.dumps(document), encoding="utf-8")
+
+    code, result = _compare(report, doubled)
+
+    assert code == 2
+    assert "more than once" in result["output"]

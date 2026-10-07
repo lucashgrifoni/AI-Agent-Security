@@ -202,21 +202,24 @@ aiasec compare --baseline last-release.sarif --report aiasec.sarif --exit-on-reg
 ```
 
 The output gives each run's attack success rate (failed probes divided by executed
-probes) and the change, then lists what differs, finding by finding (a probe and one
-of its expectations):
+probes) and the change, then lists what differs check by check. A check is one
+expectation of a probe, identified by what it checks (kind, field, tool, pattern), not
+by its position, so reordering a probe file changes nothing:
 
-- `regressions`: findings the baseline did not have, for probes it ran;
-- `newProbeFindings`: findings of probes the baseline did not run, such as probes
-  added to the suite since;
-- `fixed`: baseline findings that are gone, for probes this run ran;
-- `notRun`: probes the baseline ran and this run did not.
+- `regressions`: failing checks that passed in the baseline;
+- `newFindings`: failing checks the baseline did not run, such as new probes or new
+  expectations;
+- `fixed`: checks that failed in the baseline and passed in this run;
+- `notRun`: probes the baseline ran and this run did not;
+- `notEvaluated`: checks the baseline ran that this run did not, although their probe
+  ran, because the expectation was removed or changed since.
 
-The verdict is `REGRESSION` when either of the first two lists is not empty. When
-only `notRun` is not empty, the verdict is `INCOMPLETE`, because a probe that did not
-run cannot show a regression; pass `--allow-partial` to accept the smaller run.
-`--exit-on-regression` exits 1 unless the verdict is `NO REGRESSION`. Reports
-written before aiasec 0.3 do not record which probes ran, so they cannot be compared
-(exit 2).
+The verdict is `REGRESSION` when `regressions` or `newFindings` is not empty. When only
+`notRun` or `notEvaluated` is not empty, it is `INCOMPLETE`: a check that did not run
+cannot show a regression, and a removed check is not a fix. Pass `--allow-partial` to
+accept that. `--exit-on-regression` exits 1 unless the verdict is `NO REGRESSION`.
+`compare` reads reports with one run, as `aiasec run` writes them; reports written
+before aiasec 0.3 do not record which checks ran and cannot be compared (exit 2).
 
 A model that samples its replies can fail a probe in one run and pass it in the next.
 Compare runs made with the same model settings, at temperature 0 where the model
