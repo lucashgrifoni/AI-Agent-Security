@@ -66,6 +66,7 @@ jobs:
           sarif-file: subset.sarif
           categories: prompt-injection,jailbreak
           min-severity: high
+          probe-ids: direct-injection-001,crescendo-001,rag-doc-poison-001
 
       - name: Expect PASS on the recorded selection
         env:
@@ -75,9 +76,14 @@ jobs:
           python3 - subset.sarif <<'PY'
           import json, sys
           aiasec = json.load(open(sys.argv[1]))["runs"][0]["properties"]["aiasec"]
-          expected = {"categories": ["jailbreak", "prompt-injection"], "minSeverity": "high"}
+          expected = {
+              "categories": ["jailbreak", "prompt-injection"],
+              "minSeverity": "high",
+              "probeIds": ["crescendo-001", "direct-injection-001", "rag-doc-poison-001"],
+          }
           assert aiasec["selection"] == expected, aiasec
-          assert aiasec["probesExecuted"] == 4, aiasec
+          # The filters combine with AND: rag-doc-poison-001 is not in either category.
+          assert aiasec["probesExecuted"] == 2, aiasec
           PY
 
   vulnerable-target:
