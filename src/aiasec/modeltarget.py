@@ -175,11 +175,19 @@ class ModelAgentTarget:
             raise ModelTargetError(f"The {provider} API answered HTTP {status}{reason}")
         try:
             reply = json.loads(payload)
-            return PARSERS[provider](reply)
+            text, calls, cut = PARSERS[provider](reply)
         except (
             ValueError, RecursionError, KeyError, IndexError, TypeError, AttributeError
         ) as exc:
             raise ModelTargetError(f"The {provider} API reply could not be read") from exc
+        if cut:
+            # The part past the cut could hold what a probe looks for; scoring the rest
+            # would pass a probe on half an answer.
+            raise ModelTargetError(
+                f"The {provider} reply was cut at maxTokens ({self._config.max_tokens}); "
+                "raise maxTokens in the target config so the whole reply is scored"
+            )
+        return text, calls
 
     def _headers(self) -> dict[str, str]:
         if self._config.transport == "anthropic":
@@ -337,14 +345,17 @@ def _anthropic_body(transcript: Transcript, config: ModelTargetConfig) -> dict[s
     return body
 
 
-def _anthropic_reply(reply: dict[str, Any]) -> tuple[str, list[ToolCall]]:
+def _anthropic_reply(reply: dict[str, Any]) -> tuple[str, list[ToolCall], bool]:
     texts, calls = [], []
     for block in reply["content"]:
         if block["type"] == "text":
             texts.append(block["text"])
         elif block["type"] == "tool_use":
             calls.append(_call(block["name"], block["input"]))
-    return _observed("\n".join(texts), calls, refused=reply.get("stop_reason") == "refusal")
+    text, calls = _observed(
+        "\n".join(texts), calls, refused=reply.get("stop_reason") == "refusal"
+    )
+    return text, calls, reply.get("stop_reason") == "max_tokens"
 
 
 def _openai_tools(transcript: Transcript) -> list[dict[str, Any]]:
@@ -396,7 +407,7 @@ def _openai_body(transcript: Transcript, config: ModelTargetConfig) -> dict[str,
     return body
 
 
-def _openai_reply(reply: dict[str, Any]) -> tuple[str, list[ToolCall]]:
+def _openai_reply(reply: dict[str, Any]) -> tuple[str, list[ToolCall], bool]:
     choice = reply["choices"][0]
     message = choice["message"]
     calls = []
@@ -410,7 +421,7 @@ def _openai_reply(reply: dict[str, Any]) -> tuple[str, list[ToolCall]]:
     refusal = message.get("refusal")
     text = refusal if isinstance(refusal, str) and refusal else message.get("content")
     refused = choice.get("finish_reason") == "content_filter"
-    return _observed(text, calls, refused=refused)
+    return *_observed(text, calls, refused=refused), choice.get("finish_reason") == "length"
 
 
 # Ollama /api/chat: https://docs.ollama.com/api/chat
@@ -429,13 +440,15 @@ def _ollama_body(transcript: Transcript, config: ModelTargetConfig) -> dict[str,
     return body
 
 
-def _ollama_reply(reply: dict[str, Any]) -> tuple[str, list[ToolCall]]:
+def _ollama_reply(reply: dict[str, Any]) -> tuple[str, list[ToolCall], bool]:
     message = reply["message"]
     calls = [
         _call(call["function"]["name"], call["function"].get("arguments"))
         for call in message.get("tool_calls") or []
     ]
-    return _observed(message.get("content"), calls, refused=False)
+    return *_observed(message.get("content"), calls, refused=False), (
+        reply.get("done_reason") == "length"
+    )
 
 
 RENDERERS = {"anthropic": _anthropic_body, "openai": _openai_body, "ollama": _ollama_body}

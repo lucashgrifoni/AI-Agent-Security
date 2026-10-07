@@ -231,7 +231,9 @@ http to another host is rejected. Errors never repeat it. The API answers that a
 have the provider's shape fail it too, and so does a reply with neither text nor a tool
 call, which would otherwise pass every pattern check. A refusal the API signals
 (Anthropic `stop_reason` `refusal`, OpenAI `finish_reason` `content_filter`) counts
-as an empty reply.
+as an empty reply. A reply the API marks as cut at `maxTokens` (Anthropic
+`max_tokens`, OpenAI and Ollama `length`) fails the run too: what a probe looks for
+could sit past the cut. Raise `maxTokens` if it happens.
 
 `--execute` is required here as well: it is the opt-in to send adversarial probes to
 the model, and each request is billed by the provider.
