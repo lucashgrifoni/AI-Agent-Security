@@ -211,3 +211,14 @@ def test_a_probe_listed_twice_cannot_be_compared(tmp_path: Path) -> None:
 
     assert code == 2
     assert "more than once" in result["output"]
+
+
+def test_checks_of_one_kind_are_listed_in_a_stable_order(tmp_path: Path) -> None:
+    probes = _probe_file(tmp_path / "a", ["ALPHA", "BETA", "GAMMA"])
+    baseline = _report(tmp_path, "baseline", "fine", "--probes", str(probes))
+    current = _report(tmp_path, "current", "ALPHA BETA GAMMA", "--probes", str(probes))
+
+    _, result = _compare(baseline, current)
+
+    ids = [item["expectationId"] for item in result["regressions"]]
+    assert len(ids) == 3 and ids == sorted(ids)

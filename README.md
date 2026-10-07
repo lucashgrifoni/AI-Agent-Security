@@ -62,8 +62,10 @@ aiasec gate --report good.sarif --max-critical 0 --max-high 0 --exit-on-fail
 ```
 
 `--execute` is required because `--target` starts the command in the config. Read the
-config before you pass it. To test your own agent, wrap it in a harness that follows
-[docs/target-contract.md](docs/target-contract.md) and point `--target` at its config.
+config before you pass it. To test your own agent, copy a harness template from
+[`examples/harness`](examples/harness/README.md) (MCP stdio or HTTP), connect its
+`run_agent` to your agent, and point `--target` at its config. The full contract is in
+[docs/target-contract.md](docs/target-contract.md).
 
 To test an agent behind HTTP, start the HTTP reference target and point `--target`
 at its config:
@@ -115,9 +117,12 @@ jobs:
 ```
 
 Inputs: `target` (required), `probes` (default: the bundled suite), `sarif-file`
-(default `aiasec.sarif`), `max-critical` and `max-high` (default `0`), `max-medium`
-and `max-low` (default unlimited), and `python-version` (default `3.12`). Outputs:
-`sarif-file` and `verdict`. The action runs on Linux and macOS runners.
+(default `aiasec.sarif`), `categories`, `min-severity` and `probe-ids` (default: no
+filter; see [Select probes](#select-probes)), `max-critical` and `max-high` (default
+`0`), `max-medium` and `max-low` (default unlimited), and `python-version` (default
+`3.12`). Outputs: `sarif-file` and `verdict`. The action runs on Linux and macOS
+runners. When you set a selection input, the action lets the gate accept the subset
+report (`--allow-partial`), because your workflow asked for it.
 
 ### Inspect probes
 
@@ -141,8 +146,10 @@ aiasec probes list --category tool-abuse --min-severity critical
 A category or id that matches no loaded probe exits 2 and names it; an empty name in
 either option (an unset variable, a stray comma) and a selection that matches nothing
 exit 2 too. A filtered report records the filters under
-`runs[].properties.aiasec.selection` in SARIF and in a `Selection` line in Markdown,
-because the gate only sees counts: gate a release on the full suite, not on a subset.
+`runs[].properties.aiasec.selection` in SARIF and in a `Selection` line in Markdown.
+The gate refuses such a report (exit 2) unless you pass `--allow-partial`: thresholds
+met by part of the suite say nothing about the rest, so a release should be gated on
+the full suite.
 
 ### Score a supplied response
 
@@ -191,7 +198,9 @@ failing verdict exit 1 so CI stops; without it the gate reports and exits 0.
 The gate fails closed. SARIF lists only failures, so an empty result list cannot
 tell "nothing failed" from "nothing ran". A report that does not record how many
 probes were executed, or records zero, exits 2, as does an unreadable report or a
-result whose severity cannot be determined.
+result whose severity cannot be determined. A report of a probe subset exits 2 too,
+unless `--allow-partial` says the subset is intended; the gate's output then lists
+the filters under `selections`.
 
 ### Compare runs
 
@@ -230,7 +239,7 @@ Exit codes:
 | Command | 0 | 1 | 2 |
 |---|---|---|---|
 | `aiasec run` | no probe failed | at least one probe failed | bad input: no probes found, invalid probe, unreadable file |
-| `aiasec gate` | `PASS`, or `FAIL` without `--exit-on-fail` | `FAIL` with `--exit-on-fail` | unreadable report, or no executed probes recorded |
+| `aiasec gate` | `PASS`, or `FAIL` without `--exit-on-fail` | `FAIL` with `--exit-on-fail` | unreadable report, no executed probes recorded, or a subset report without `--allow-partial` |
 | `aiasec compare` | no regression, or any verdict without `--exit-on-regression` | `REGRESSION`, or `INCOMPLETE` without `--allow-partial`, with `--exit-on-regression` | unreadable report, or one that does not record which probes ran |
 
 SARIF results point at the probe file that defines the failed expectation and
@@ -396,7 +405,7 @@ src/aiasec/
   mcp/                 MCP stdio adapter, target driver, config, fixtures, and transports
   outputs/             Markdown and SARIF renderers
   probes/              bundled probe suite, one directory per category
-examples/              reference MCP targets (good, vulnerable) and a tools/list fixture
+examples/              harness templates, reference targets (good, vulnerable) and a tools/list fixture
 docs/                  probe authoring guide and target contract
 tests/                 unit and end-to-end tests
 ```

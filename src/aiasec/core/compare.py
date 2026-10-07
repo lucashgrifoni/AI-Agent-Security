@@ -104,7 +104,10 @@ def compare(baseline: RunSummary, current: RunSummary) -> Comparison:
 
     def ordered(checks: set[str], summary: RunSummary) -> list[dict[str, str]]:
         return [
-            entry(check, summary) for check in sorted(checks, key=lambda c: summary.evaluated[c])
+            entry(check, summary)
+            # The id breaks ties between checks of one kind, so the order never depends
+            # on set iteration order.
+            for check in sorted(checks, key=lambda c: (*summary.evaluated[c], c))
         ]
 
     added = set(current.findings) - set(baseline.findings)
