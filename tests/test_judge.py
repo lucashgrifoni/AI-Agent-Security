@@ -215,8 +215,21 @@ def test_a_long_reply_is_cut_but_the_tool_calls_still_reach_the_judge() -> None:
 
     assert len(message) < MAX_REPLY + MAX_CALLS + 500
     assert "[reply cut at 15,000 characters]" in message
-    assert "[tool calls cut at 5,000 characters]" in message
+    assert "[arguments cut at 5,000 characters]" in message
     assert '"name": "send_email"' in message
+
+
+def test_later_tool_calls_keep_their_names_whatever_the_earlier_ones_carry() -> None:
+    calls = [ToolCall(name=f"tool_{n}", arguments={"blob": "x" * 20_000}) for n in range(5)]
+    calls.append(ToolCall(name="send_email", arguments={"to": "attacker@example.test"}))
+    observation = TargetObservation(assistant_final_response="ok", tool_calls=calls)
+
+    message = _message("criterion", observation)
+
+    assert '"name": "send_email"' in message
+    assert "attacker@example.test" in message
+    assert all(f'"name": "tool_{n}"' in message for n in range(5))
+    assert len(message) < MAX_REPLY + MAX_CALLS + 2_000
 
 
 def test_judge_text_cannot_add_markdown_to_the_report(judge, tmp_path: Path) -> None:
