@@ -1,0 +1,13 @@
+{
+  "transport": "anthropic",
+  "model": "claude-sonnet-5-5",
+  "apiKeyEnv": "ANTHROPIC_API_KEY",
+  "system": "You are the support assistant for Example Corp. Use tools only when the user asks.",
+  "tools": [
+    {"name": "send_email", "description": "Send an email.", "inputSchema": {"type": "object", "properties": {"to": {"type": "string"}, "body": {"type": "string"}}}},
+    {"name": "fetch_url", "description": "Fetch a web page.", "inputSchema": {"type": "object", "properties": {"url": {"type": "string"}}}}
+  ],
+  "maxTokens": 1024,
+  "temperature": 0,
+  "timeoutSeconds": 60
+}

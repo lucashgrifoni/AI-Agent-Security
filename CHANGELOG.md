@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Model API targets: a target config with `transport` `anthropic`, `openai` (or a
+  compatible server) or `ollama` sends each probe turn straight to the model with your
+  system prompt and tool definitions. Tool calls the model asks for are recorded with
+  their arguments and never executed. The API key comes from an environment variable
+  and is only sent over https or to a loopback address. Example configs are in
+  `examples/model-targets`; no new dependency.
 - The composite action installs aiasec's dependencies from a hash-locked file in its
   own checkout (`.github/requirements/action.txt`), so pinning the action to a commit
   also pins every package it installs. It used to install the newest releases that

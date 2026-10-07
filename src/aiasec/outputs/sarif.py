@@ -18,6 +18,8 @@ SINGLE_OBSERVATION_MODE = "single-observation"
 MCP_TARGET_MODE = "mcp-stdio-target"
 # Each probe's inputs were POSTed to a live target over HTTP.
 HTTP_TARGET_MODE = "http-target"
+# Each probe's inputs were sent to a model API; tool calls were recorded, never run.
+MODEL_API_TARGET_MODE = "model-api-target"
 
 
 def render_sarif(
