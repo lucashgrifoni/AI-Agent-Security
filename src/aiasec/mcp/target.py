@@ -1,8 +1,8 @@
 """Drive an agent under test that is exposed as one MCP tool.
 
 The target contract (docs/target-contract.md): the target is an MCP stdio server that
-exposes a tool, `aiasec_agent` by default. For each probe, aiasec calls that tool with
-the probe's inputs. The tool runs the agent and returns its final response as text
+exposes a tool, `aiasec_agent` by default. aiasec calls that tool once per probe turn
+with the conversation so far. The tool runs the agent and returns its reply as text
 content, and the names of the tools the agent called in
 `structuredContent.toolsCalled`.
 """
@@ -12,6 +12,7 @@ from __future__ import annotations
 from types import TracebackType
 from typing import Any
 
+from aiasec.core.conversation import drive_conversation
 from aiasec.core.evaluator.rules import TargetObservation
 from aiasec.core.probe import Probe
 from aiasec.mcp.config import McpStdioConfig
@@ -69,22 +70,22 @@ class McpAgentTarget:
             raise McpTargetError("Target session is not connected")
         return self._client.session
 
-    def observe(self, probe: Probe) -> TargetObservation:
-        """Send one probe's inputs to the agent and return what it did."""
+    @property
+    def label(self) -> str:
+        """Short description of the target for run output."""
 
-        result = self._client.call_tool(
-            self._agent_tool,
-            {
-                "probeId": probe.id,
-                "inputs": [item.model_dump(exclude_none=True) for item in probe.inputs],
-            },
-        )
-        if result.get("isError") is True:
-            raise McpTargetError(f"Target returned a tool error for probe {probe.id}")
-        return TargetObservation(
-            assistant_final_response=_text_content(result),
-            tools_called=_tools_called(result, probe.id),
-        )
+        return f"MCP {self.session.protocol_version} ({self.session.era})"
+
+    def observe(self, probe: Probe) -> TargetObservation:
+        """Send a probe to the agent, one tool call per turn, and return what it did."""
+
+        def send(arguments: dict[str, Any]) -> tuple[str, list[str]]:
+            result = self._client.call_tool(self._agent_tool, arguments)
+            if result.get("isError") is True:
+                raise McpTargetError(f"Target returned a tool error for probe {probe.id}")
+            return _text_content(result), _tools_called(result, probe.id)
+
+        return drive_conversation(probe, send)
 
     def close(self) -> None:
         """Stop the target process."""
