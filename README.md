@@ -6,7 +6,7 @@
 
 `aiasec` is a small, reproducible testbed for adversarial regression checks against AI agents and MCP tool boundaries. It sends a battery of adversarial probes to your agent, scores each response with deterministic rules, and writes a SARIF report that a release gate turns into PASS or FAIL in CI.
 
-- 15 bundled probes across 7 attack categories, defined in YAML and mapped to OWASP
+- 17 bundled probes across 7 attack categories, defined in YAML and mapped to OWASP
 - deterministic, rules-only evaluation: no LLM judges the result
 - a live target mode that sends every probe to the agent under test over MCP stdio or HTTP
 - Markdown and SARIF 2.1.0 reports that GitHub code scanning can display
@@ -18,7 +18,7 @@ This is not a runtime guardrail and it is not a full red-team framework. Use it 
 
 `aiasec run` has two modes, and every report states which one produced it:
 
-- **Target mode** (`--target`, `observationMode: mcp-stdio-target` or `http-target`): aiasec sends each probe to your agent harness, either an MCP stdio server it starts or an HTTP endpoint, one call per conversation turn, then scores the final reply and every tool the agent reports calling. See [docs/target-contract.md](docs/target-contract.md).
+- **Target mode** (`--target`, `observationMode: mcp-stdio-target` or `http-target`): aiasec sends each probe to your agent harness, either an MCP stdio server it starts or an HTTP endpoint, one call per conversation turn, then scores the final reply and every tool the agent reports calling, with its arguments when the harness reports them. See [docs/target-contract.md](docs/target-contract.md).
 - **Observation mode** (`--response`, `observationMode: single-observation`): aiasec scores every probe against one response you supply. Nothing is sent anywhere, so a passing probe means that response did not trigger it, not that an agent resisted the attack.
 
 HTTP and vendor SDK adapters are left for later iterations.
@@ -175,14 +175,14 @@ and deduplicate them.
 
 ## Probe Suite
 
-Fifteen bundled probes covering seven categories:
+Seventeen bundled probes covering seven categories:
 
 | Category | Probes | OWASP LLM 2025 | OWASP MCP 2025 (beta) |
 |---|---|---|---|
 | `prompt-injection` | `direct-injection-001`, `encoding-injection-001` | LLM01 | |
 | `indirect-injection` | `rag-doc-poison-001`, `hidden-html-injection-001` | LLM01 | MCP06 |
-| `tool-abuse` | `tool-coercion-001`, `tool-chain-exfil-001` | LLM06 | |
-| `data-exfil` | `markdown-image-exfil-001`, `url-embed-exfil-001` | LLM02 | |
+| `tool-abuse` | `tool-coercion-001`, `tool-chain-exfil-001`, `tool-argument-traversal-001` | LLM06 | MCP06 |
+| `data-exfil` | `markdown-image-exfil-001`, `url-embed-exfil-001`, `tool-argument-exfil-001` | LLM02 | MCP06 |
 | `jailbreak` | `persona-swap-001`, `crescendo-001` | LLM01 | |
 | `output-manipulation` | `html-script-output-001`, `sql-payload-output-001`, `shell-payload-output-001` | LLM05 | |
 | `mcp-specific` | `tool-description-poisoning-001`, `tool-shadowing-001` | LLM01, LLM06 | MCP03 |
@@ -284,7 +284,7 @@ metadata:
 
 Supported rules:
 
-- `regex_not_match`: fails when a regex matches the assistant response
+- `regex_not_match`: fails when a regex matches the assistant response, or, with `on: tool_arguments`, any argument of a tool call (see [docs/writing-probes.md](docs/writing-probes.md#checking-tool-arguments))
 - `regex_match`: fails when a regex does not match the assistant response
 - `tool_not_called`: fails when an observed tool name was called
 - `tool_called`: fails when an expected tool name was not called
@@ -317,6 +317,8 @@ Initial controls:
 - report locations are repository-relative or probe-root-relative, never absolute machine paths
 - probe payloads target reserved `.test` hostnames, never a live host
 - SARIF includes only failed findings
+- reports and error messages never contain tool argument values, which may hold a leaked secret
+- a probe that checks a tool's arguments fails when the target called that tool without reporting them
 - aiasec starts a process only for `run --target` with `--execute`; `mcp tools list` never does
 - a target that does not answer a request within `timeoutSeconds` fails the run instead of hanging CI, even when it keeps sending notifications, stops reading its input, or drips its reply
 - a target that does not report its tool calls fails the run instead of passing `tool_not_called` checks

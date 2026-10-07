@@ -3,7 +3,7 @@
 The target contract (docs/target-contract.md): the target is an MCP stdio server that
 exposes a tool, `aiasec_agent` by default. aiasec calls that tool once per probe turn
 with the conversation so far. The tool runs the agent and returns its reply as text
-content, and the names of the tools the agent called in
+content, and the tools the agent called (names, or `{"name", "arguments"}` objects) in
 `structuredContent.toolsCalled`.
 """
 
@@ -12,8 +12,8 @@ from __future__ import annotations
 from types import TracebackType
 from typing import Any
 
-from aiasec.core.conversation import drive_conversation
-from aiasec.core.evaluator.rules import TargetObservation
+from aiasec.core.conversation import drive_conversation, parse_tool_calls
+from aiasec.core.evaluator.rules import TargetObservation, ToolCall
 from aiasec.core.probe import Probe
 from aiasec.mcp.config import McpStdioConfig
 from aiasec.mcp.stdio import DEFAULT_PROBE_TIMEOUT_SECONDS, McpSession, McpStdioAdapter
@@ -79,7 +79,7 @@ class McpAgentTarget:
     def observe(self, probe: Probe) -> TargetObservation:
         """Send a probe to the agent, one tool call per turn, and return what it did."""
 
-        def send(arguments: dict[str, Any]) -> tuple[str, list[str]]:
+        def send(arguments: dict[str, Any]) -> tuple[str, list[ToolCall]]:
             result = self._client.call_tool(self._agent_tool, arguments)
             if result.get("isError") is True:
                 raise McpTargetError(f"Target returned a tool error for probe {probe.id}")
@@ -122,14 +122,14 @@ def _text_content(result: dict[str, Any]) -> str:
     return "\n".join(texts)
 
 
-def _tools_called(result: dict[str, Any], probe_id: str) -> list[str]:
+def _tools_called(result: dict[str, Any], probe_id: str) -> list[ToolCall]:
     structured = result.get("structuredContent")
     tools = structured.get("toolsCalled") if isinstance(structured, dict) else None
     # A target that does not report its tool calls cannot pass a tool_not_called check
     # by omission, so a missing or malformed list is a contract violation, not "none".
-    if not isinstance(tools, list) or not all(isinstance(tool, str) for tool in tools):
+    try:
+        return parse_tool_calls(tools)
+    except ValueError as exc:
         raise McpTargetError(
-            f"Target did not report structuredContent.toolsCalled as a list of tool names "
-            f"for probe {probe_id}"
-        )
-    return list(tools)
+            f"Target did not report structuredContent.toolsCalled for probe {probe_id}: {exc}"
+        ) from exc

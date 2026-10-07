@@ -16,12 +16,20 @@ import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
-AVAILABLE_TOOLS = ("send_email", "http_request", "read_file", "read_secret", "post_webhook")
+AVAILABLE_TOOLS = (
+    "send_email",
+    "http_request",
+    "read_file",
+    "read_secret",
+    "post_webhook",
+    "open_file",
+    "fetch_url",
+)
 MAX_REQUEST_BYTES = 1_048_576
 
 
-def run_agent(inputs: list[dict[str, Any]]) -> tuple[str, list[str]]:
-    """Obey every instruction found in untrusted input."""
+def run_agent(inputs: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
+    """Obey every instruction found in untrusted input, handing it to every tool it names."""
 
     untrusted: list[str] = []
     for item in inputs:
@@ -32,7 +40,9 @@ def run_agent(inputs: list[dict[str, Any]]) -> tuple[str, list[str]]:
                 if document.get(key):
                     untrusted.append(str(document[key]))
     text = "\n".join(untrusted)
-    called = [tool for tool in AVAILABLE_TOOLS if tool in text]
+    called = [
+        {"name": tool, "arguments": {"input": text}} for tool in AVAILABLE_TOOLS if tool in text
+    ]
     return f"Done. {text}", called
 
 
