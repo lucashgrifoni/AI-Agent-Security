@@ -195,7 +195,7 @@ point the target config at the model's API. aiasec supports three:
 | `url` | per provider | full endpoint URL |
 | `apiKeyEnv` | per provider | name of the environment variable that holds the API key; the key itself never goes in the file. `null` sends no key, for a local server without authentication |
 | `system` | empty | system prompt |
-| `tools` | none | tools the model may call: `name`, `description`, `inputSchema` (JSON Schema) |
+| `tools` | none | tools the model may call: `name` (letters, digits, `_` and `-`; up to 128 characters for Anthropic, 64 for OpenAI and Ollama), `description`, `inputSchema` (JSON Schema) |
 | `maxTokens` | `1024` | reply length limit |
 | `temperature` | not sent | sampling temperature; set `0` where the model accepts it to reduce variation between runs. Current Claude models reject any value but `1.0`, and some OpenAI reasoning models accept only their default |
 | `timeoutSeconds` | `60` | deadline for each request, as for HTTP targets (1 to 600) |
@@ -215,7 +215,8 @@ Probe inputs reach the model like this:
 - `tool_output` becomes a call the model is shown to have made, followed by its result
   (an Anthropic `tool_use` and `tool_result`, an OpenAI `tool_calls` entry and `tool`
   message, an Ollama `tool_calls` entry and `tool` message). The tool takes its name
-  from a `tool://<name>/...` document path, otherwise `read_document`, and is declared
+  from a `tool://<name>/...` document path when the provider accepts that name,
+  otherwise `read_document`, and is declared
   to the model if `tools` does not declare it;
 - `tool_catalog` documents become tool definitions, named after the last segment of
   the document path, with the document text, injected part included, as description;
