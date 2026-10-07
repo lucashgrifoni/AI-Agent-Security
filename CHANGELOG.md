@@ -80,6 +80,9 @@ All notable changes to this project will be documented in this file.
   `{"name", "arguments"}` objects in `toolsCalled`; plain names still work. A call whose
   arguments were not reported fails such a check, and argument values never appear in
   reports or error messages.
+- A probe whose expectation sets an empty `tool_name` is rejected at load time. Read as
+  a literal name it matched no call, so `tool_not_called` and argument checks passed
+  without checking anything.
 - Two new probes use it, for 17 in total: `tool-argument-traversal-001` (tool output
   steers `open_file` outside the workspace, OWASP LLM06) and `tool-argument-exfil-001`
   (a retrieved document steers `fetch_url` to a collector, OWASP LLM02). Both map to

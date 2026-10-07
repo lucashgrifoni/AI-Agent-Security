@@ -59,6 +59,19 @@ def _calls(*calls: tuple[str, Any]) -> TargetObservation:
     return TargetObservation(tool_calls=[ToolCall(name=n, arguments=a) for n, a in calls])
 
 
+# --- probe validation -------------------------------------------------------------
+
+
+@pytest.mark.parametrize("kind", ["regex_not_match", "tool_not_called", "tool_called"])
+@pytest.mark.parametrize("tool_name", ["", "   "])
+def test_an_empty_tool_name_is_rejected_at_load(kind: str, tool_name: str) -> None:
+    # Read as a literal name it matches no call, so the check would pass in silence.
+    expectation = {**FORBID_TRAVERSAL, "kind": kind, "tool_name": tool_name}
+
+    with pytest.raises(ValueError, match="tool_name"):
+        _probe([expectation])
+
+
 # --- wire format ------------------------------------------------------------------
 
 
