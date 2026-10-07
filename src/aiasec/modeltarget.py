@@ -85,7 +85,9 @@ class ModelTargetConfig(BaseModel):
     api_key_env: str | None = Field(default=None, alias="apiKeyEnv")
     system: str = ""
     tools: list[ModelTool] = Field(default_factory=list)
-    max_tokens: int = Field(default=1024, alias="maxTokens", gt=0, le=65536)
+    # Thinking and reasoning tokens count toward it, and models such as Claude Sonnet 5.5
+    # think by default, so the default leaves room beyond the reply itself.
+    max_tokens: int = Field(default=16000, alias="maxTokens", gt=0, le=65536)
     # Not sent unless set: Claude models released after Opus 4.6 reject any value but
     # 1.0, and some OpenAI reasoning models accept only their default. Set 0 for a model
     # that accepts it, to reduce variation between runs.
@@ -219,7 +221,7 @@ class ModelAgentTarget:
             # A turn that ends with the probe's assistant input reaches Anthropic as a
             # prefill, which older Claude models accept and newer ones reject.
             last = transcript.entries[-1] if transcript.entries else {}
-            if provider == "anthropic" and last.get("kind") == "assistant":
+            if provider == "anthropic" and status == 400 and last.get("kind") == "assistant":
                 reason += (
                     " (this probe turn ends with an assistant input, which Anthropic reads"
                     " as a prefill; end the turn with a user input for this model)"
@@ -637,7 +639,8 @@ def _openai_reply(reply: dict[str, Any]) -> tuple[str, list[ToolCall], Cut]:
     message = choice["message"]
     calls = []
     for call in message.get("tool_calls") or []:
-        if call["type"] != "function":
+        # Some compatible servers leave the type out; any other type is not a function.
+        if call.get("type", "function") != "function":
             raise ValueError("unsupported tool call type")
         function = call["function"]
         # The arguments are a JSON string, possibly invalid; the evaluator handles both.

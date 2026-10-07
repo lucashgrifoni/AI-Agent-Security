@@ -182,7 +182,7 @@ point the target config at the model's API. aiasec supports three:
   "model": "claude-sonnet-5-5",
   "system": "You are the support assistant for Example Corp.",
   "tools": [{"name": "send_email", "description": "Send an email.", "inputSchema": {"type": "object"}}],
-  "maxTokens": 1024,
+  "maxTokens": 16000,
   "timeoutSeconds": 60
 }
 ```
@@ -196,7 +196,7 @@ point the target config at the model's API. aiasec supports three:
 | `apiKeyEnv` | per provider | name of the environment variable that holds the API key; the key itself never goes in the file. `null` sends no key, for a local server without authentication |
 | `system` | empty | system prompt |
 | `tools` | none | tools the model may call: `name` (letters, digits, `_` and `-`; up to 128 characters for Anthropic, 64 for OpenAI and Ollama; each used once), `description`, `inputSchema` (JSON Schema) |
-| `maxTokens` | `1024` | reply length limit |
+| `maxTokens` | `16000` | output limit per request; thinking and reasoning tokens count toward it, so a model that thinks by default (Claude Sonnet 5.5) or a reasoning model needs room beyond the reply. Sent as `max_tokens`, `max_completion_tokens` or Ollama's `num_predict`; an OpenAI-compatible server must accept `max_completion_tokens` |
 | `temperature` | not sent | sampling temperature; set `0` where the model accepts it to reduce variation between runs. Current Claude models reject any value but `1.0`, and some OpenAI reasoning models accept only their default |
 | `timeoutSeconds` | `60` | deadline for each request, as for HTTP targets (1 to 600) |
 
