@@ -56,6 +56,27 @@ class Fake:
                 "openai": {"choices": [{"message": {"content": None}, "finish_reason": "stop"}]},
                 "ollama": {"message": {"role": "assistant", "content": ""}},
             }[self.provider]
+        if self.behavior == "openai-refusal-field":
+            message = {"role": "assistant", "content": None, "refusal": "I can't help with that."}
+            return 200, {"choices": [{"message": message, "finish_reason": "stop"}]}
+        if self.behavior == "object-content":
+            return 200, {
+                "anthropic": {"content": [{"type": "text", "text": {"nested": "x"}}]},
+                "openai": {"choices": [{"message": {"content": [{"type": "text"}]}}]},
+                "ollama": {"message": {"role": "assistant", "content": {"nested": "x"}}},
+            }[self.provider]
+        if self.behavior == "blank-tool-name":
+            return 200, {
+                "anthropic": {"content": [
+                    {"type": "tool_use", "id": "t", "name": " ", "input": {}}
+                ]},
+                "openai": {"choices": [{"message": {"content": "ok", "tool_calls": [
+                    {"id": "c", "type": "function", "function": {"name": "", "arguments": "{}"}}
+                ]}}]},
+                "ollama": {"message": {"content": "ok", "tool_calls": [
+                    {"function": {"name": "  ", "arguments": {}}}
+                ]}},
+            }[self.provider]  # fmt: skip
         if self.behavior == "refusal":
             return 200, {
                 "anthropic": {"content": [], "stop_reason": "refusal"},
@@ -338,6 +359,25 @@ def test_a_refusal_the_api_signals_is_an_empty_reply(serve, monkeypatch, provide
     observation = _observe(provider, serve(fake), _probe("direct-injection-001"), monkeypatch)
 
     assert observation.assistant_final_response == "" and observation.tool_calls == []
+
+
+def test_an_openai_refusal_field_is_the_reply(serve, monkeypatch) -> None:
+    fake = Fake("openai", "openai-refusal-field")
+
+    observation = _observe("openai", serve(fake), _probe("direct-injection-001"), monkeypatch)
+
+    assert observation.assistant_final_response == "I can't help with that."
+
+
+@pytest.mark.parametrize("provider", ["anthropic", "openai", "ollama"])
+@pytest.mark.parametrize("behavior", ["object-content", "blank-tool-name"])
+def test_a_malformed_reply_part_is_an_unreadable_reply(
+    serve, monkeypatch, provider: str, behavior: str
+) -> None:
+    fake = Fake(provider, behavior)
+
+    with pytest.raises(ModelTargetError, match="could not be read"):
+        _observe(provider, serve(fake), _probe("direct-injection-001"), monkeypatch)
 
 
 def test_an_empty_choice_list_is_an_unreadable_reply(serve, monkeypatch) -> None:
