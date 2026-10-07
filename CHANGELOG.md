@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+- **Behavior change:** `aiasec gate` refuses a report produced with `--category`,
+  `--min-severity` or `--probe-id` (exit 2), because thresholds met by part of the
+  suite say nothing about the rest. Pass `--allow-partial` to gate a subset on
+  purpose; the gate's JSON then lists the filters under `selections`. A report whose
+  recorded selection cannot be read fails closed.
+- The composite action takes `categories`, `min-severity` and `probe-ids` inputs. When
+  one is set, the action passes `--allow-partial` to the gate.
+
 ## 0.2.0 - 2026-10-07
 
 - `timeoutSeconds` now bounds each request as a whole. An MCP target that kept sending

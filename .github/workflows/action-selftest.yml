@@ -58,6 +58,28 @@ jobs:
           VERDICT: ${{ steps.aiasec.outputs.verdict }}
         run: test "$VERDICT" = "PASS"
 
+      - name: Run aiasec on a selection of the suite
+        id: subset
+        uses: ./
+        with:
+          target: examples/target-mcp-good/aiasec-target.json
+          sarif-file: subset.sarif
+          categories: prompt-injection,jailbreak
+          min-severity: high
+
+      - name: Expect PASS on the recorded selection
+        env:
+          VERDICT: ${{ steps.subset.outputs.verdict }}
+        run: |
+          test "$VERDICT" = "PASS" || { echo "expected PASS, got '$VERDICT'"; exit 1; }
+          python3 - subset.sarif <<'PY'
+          import json, sys
+          aiasec = json.load(open(sys.argv[1]))["runs"][0]["properties"]["aiasec"]
+          expected = {"categories": ["jailbreak", "prompt-injection"], "minSeverity": "high"}
+          assert aiasec["selection"] == expected, aiasec
+          assert aiasec["probesExecuted"] == 4, aiasec
+          PY
+
   vulnerable-target:
     name: Action - vulnerable target fails
     runs-on: ubuntu-latest

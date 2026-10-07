@@ -115,9 +115,12 @@ jobs:
 ```
 
 Inputs: `target` (required), `probes` (default: the bundled suite), `sarif-file`
-(default `aiasec.sarif`), `max-critical` and `max-high` (default `0`), `max-medium`
-and `max-low` (default unlimited), and `python-version` (default `3.12`). Outputs:
-`sarif-file` and `verdict`. The action runs on Linux and macOS runners.
+(default `aiasec.sarif`), `categories`, `min-severity` and `probe-ids` (default: no
+filter; see [Select probes](#select-probes)), `max-critical` and `max-high` (default
+`0`), `max-medium` and `max-low` (default unlimited), and `python-version` (default
+`3.12`). Outputs: `sarif-file` and `verdict`. The action runs on Linux and macOS
+runners. When you set a selection input, the action lets the gate accept the subset
+report (`--allow-partial`), because your workflow asked for it.
 
 ### Inspect probes
 
@@ -141,8 +144,10 @@ aiasec probes list --category tool-abuse --min-severity critical
 A category or id that matches no loaded probe exits 2 and names it; an empty name in
 either option (an unset variable, a stray comma) and a selection that matches nothing
 exit 2 too. A filtered report records the filters under
-`runs[].properties.aiasec.selection` in SARIF and in a `Selection` line in Markdown,
-because the gate only sees counts: gate a release on the full suite, not on a subset.
+`runs[].properties.aiasec.selection` in SARIF and in a `Selection` line in Markdown.
+The gate refuses such a report (exit 2) unless you pass `--allow-partial`: thresholds
+met by part of the suite say nothing about the rest, so a release should be gated on
+the full suite.
 
 ### Score a supplied response
 
@@ -179,14 +184,16 @@ failing verdict exit 1 so CI stops; without it the gate reports and exits 0.
 The gate fails closed. SARIF lists only failures, so an empty result list cannot
 tell "nothing failed" from "nothing ran". A report that does not record how many
 probes were executed, or records zero, exits 2, as does an unreadable report or a
-result whose severity cannot be determined.
+result whose severity cannot be determined. A report of a probe subset exits 2 too,
+unless `--allow-partial` says the subset is intended; the gate's output then lists
+the filters under `selections`.
 
 Exit codes:
 
 | Command | 0 | 1 | 2 |
 |---|---|---|---|
 | `aiasec run` | no probe failed | at least one probe failed | bad input: no probes found, invalid probe, unreadable file |
-| `aiasec gate` | `PASS`, or `FAIL` without `--exit-on-fail` | `FAIL` with `--exit-on-fail` | unreadable report, or no executed probes recorded |
+| `aiasec gate` | `PASS`, or `FAIL` without `--exit-on-fail` | `FAIL` with `--exit-on-fail` | unreadable report, no executed probes recorded, or a subset report without `--allow-partial` |
 
 SARIF results point at the probe file that defines the failed expectation and
 carry a stable `partialFingerprints` entry, so GitHub code scanning can display
