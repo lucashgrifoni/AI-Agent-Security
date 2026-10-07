@@ -191,6 +191,22 @@ jobs:
           "$AIASEC" gate --report "$RUNNER_TEMP/vulnerable.sarif" --max-critical 0 --max-high 0 --exit-on-fail
           test $? -eq 1 || { echo "the gate must fail the vulnerable target"; exit 1; }
 
+      - name: Drive the example HTTP target with the installed wheel
+        shell: bash
+        run: |
+          AIASEC="$RUNNER_TEMP/user/bin/aiasec"
+          python examples/target-http-vulnerable/server.py --port 8765 &
+          server=$!
+          trap 'kill "$server"' EXIT
+          for _ in $(seq 1 50); do
+            (exec 3<>/dev/tcp/127.0.0.1/8765) 2>/dev/null && break
+            sleep 0.2
+          done
+          set +e
+          "$AIASEC" run --target examples/target-http-vulnerable/aiasec-target.json --execute --output "$RUNNER_TEMP/http.sarif"
+          test $? -eq 1 || { echo "the vulnerable HTTP target must fail the run"; exit 1; }
+          python -c 'import json,sys; p=json.load(open(sys.argv[1]))["runs"][0]["properties"]["aiasec"]; assert p["observationMode"]=="http-target" and p["probesFailed"]==p["probesExecuted"], p' "$RUNNER_TEMP/http.sarif"
+
       - name: Upload dist
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:

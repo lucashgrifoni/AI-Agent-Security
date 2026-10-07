@@ -17,13 +17,19 @@ from aiasec.core.gate import GateThresholds, gate_report
 from aiasec.core.probe import Probe, load_probes_from_dir
 from aiasec.core.runner import run_probes, run_probes_against
 from aiasec.core.verdict import ProbeRunResult
+from aiasec.httptarget import HttpAgentTarget, HttpTargetConfig, HttpTargetError
 from aiasec.mcp.config import McpStdioConfig, load_stdio_config
 from aiasec.mcp.fixtures import load_jsonrpc_fixture
 from aiasec.mcp.stdio import McpProtocolError, McpRemoteError, McpStdioAdapter
 from aiasec.mcp.target import McpAgentTarget, McpTargetError
 from aiasec.mcp.transport import McpTransportError
 from aiasec.outputs.markdown import render_markdown
-from aiasec.outputs.sarif import MCP_TARGET_MODE, SINGLE_OBSERVATION_MODE, render_sarif_json
+from aiasec.outputs.sarif import (
+    HTTP_TARGET_MODE,
+    MCP_TARGET_MODE,
+    SINGLE_OBSERVATION_MODE,
+    render_sarif_json,
+)
 
 DEFAULT_PROBES_DIR = Path(__file__).resolve().parents[1] / "probes"
 
@@ -118,30 +124,46 @@ def _load_config(config: Path) -> McpStdioConfig:
         raise typer.BadParameter(str(exc), param_hint="--config") from exc
 
 
+def _load_target_config(target: Path) -> McpStdioConfig | HttpTargetConfig:
+    raw = json.loads(target.read_text(encoding="utf-8"))
+    if isinstance(raw, dict) and raw.get("transport") == "http":
+        return HttpTargetConfig.model_validate(raw)
+    return McpStdioConfig.model_validate(raw)
+
+
 def _run_against_target(
     probes: list[Probe],
     target: Path,
     *,
     execute: bool,
-) -> list[ProbeRunResult]:
+) -> tuple[list[ProbeRunResult], str]:
     try:
-        config = load_stdio_config(target)
+        config = _load_target_config(target)
     except (OSError, ValueError) as exc:
         typer.echo(f"Invalid target config {target}: {exc}", err=True)
         raise typer.Exit(code=2) from exc
     if not execute:
+        action = (
+            f"send probes to {config.url}"
+            if isinstance(config, HttpTargetConfig)
+            else f"start {config.command!r}"
+        )
         typer.echo(
-            f"Refusing to start {config.command!r} from {target}. Review the command, then "
-            "pass --execute to let aiasec run it.",
+            f"Refusing to {action} from {target}. Review the target config, then pass "
+            "--execute to let aiasec run it.",
             err=True,
         )
         raise typer.Exit(code=2)
     try:
+        if isinstance(config, HttpTargetConfig):
+            with HttpAgentTarget.start(config) as agent:
+                typer.echo(f"Target is {agent.label}.")
+                return run_probes_against(probes, agent.observe), HTTP_TARGET_MODE
         with McpAgentTarget.start(config) as agent:
-            session = agent.session
-            typer.echo(f"Target speaks MCP {session.protocol_version} ({session.era}).")
-            return run_probes_against(probes, agent.observe)
+            typer.echo(f"Target speaks {agent.label}.")
+            return run_probes_against(probes, agent.observe), MCP_TARGET_MODE
     except (
+        HttpTargetError,
         McpProtocolError,
         McpRemoteError,
         McpTargetError,
@@ -202,12 +224,15 @@ def run(
         Path | None,
         typer.Option(
             "--target",
-            help="MCP stdio config of the agent under test. Sends each probe to it.",
+            help="Target config (MCP stdio or HTTP) of the agent under test.",
         ),
     ] = None,
     execute: Annotated[
         bool,
-        typer.Option("--execute", help="Allow aiasec to start the --target process."),
+        typer.Option(
+            "--execute",
+            help="Allow aiasec to start the --target process or send probes to its URL.",
+        ),
     ] = False,
 ) -> None:
     """Run probes against a live MCP target or a supplied observation."""
@@ -230,8 +255,7 @@ def run(
         raise typer.Exit(code=2)
 
     if target is not None:
-        results = _run_against_target(probes, target, execute=execute)
-        observation_mode = MCP_TARGET_MODE
+        results, observation_mode = _run_against_target(probes, target, execute=execute)
     else:
         observation = TargetObservation(
             assistant_final_response=_read_response(response, response_file),

@@ -16,6 +16,8 @@ FINGERPRINT_KEY = "aiasecFinding/v1"
 SINGLE_OBSERVATION_MODE = "single-observation"
 # Each probe's inputs were sent to a live target over MCP stdio.
 MCP_TARGET_MODE = "mcp-stdio-target"
+# Each probe's inputs were POSTed to a live target over HTTP.
+HTTP_TARGET_MODE = "http-target"
 
 
 def render_sarif(
@@ -84,6 +86,8 @@ def _rule(finding: Finding) -> dict[str, Any]:
     }
     if finding.owasp_llm:
         properties["owasp_llm"] = finding.owasp_llm
+    if finding.owasp_mcp:
+        properties["owasp_mcp"] = finding.owasp_mcp
 
     return {
         "id": finding.probe_id,
@@ -101,6 +105,8 @@ def _result(finding: Finding) -> dict[str, Any]:
     }
     if finding.owasp_llm:
         properties["owasp_llm"] = finding.owasp_llm
+    if finding.owasp_mcp:
+        properties["owasp_mcp"] = finding.owasp_mcp
 
     # GitHub code scanning only displays results that carry a location, so every result
     # points at the probe file that defines the failed expectation.

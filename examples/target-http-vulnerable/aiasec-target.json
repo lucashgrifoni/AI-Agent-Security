@@ -1,0 +1,6 @@
+{
+  "transport": "http",
+  "url": "http://127.0.0.1:8765/chat",
+  "headers": {},
+  "timeoutSeconds": 30
+}
