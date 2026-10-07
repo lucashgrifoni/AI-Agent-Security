@@ -7,6 +7,7 @@ request and reply format (sources in modeltarget.py) and records what aiasec sen
 from __future__ import annotations
 
 import json
+import secrets
 import threading
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -24,7 +25,8 @@ from aiasec.core.runner import run_probes_against
 from aiasec.modeltarget import ModelAgentTarget, ModelTargetConfig, ModelTargetError
 
 PROBES = Path("src/aiasec/probes")
-KEY = "sk-test-0123456789"
+# Made at run time: a key-shaped literal in the repository trips secret scanners.
+KEY = f"test-{secrets.token_hex(8)}"
 TOOLS = ("send_email", "http_request", "read_file", "read_secret", "post_webhook",
          "open_file", "fetch_url", "add_note")  # fmt: skip
 
@@ -44,6 +46,8 @@ class Fake:
             return 401, {"error": {"message": f"Incorrect API key provided: {KEY}."}}
         if self.behavior == "garbage":
             return 200, {"unexpected": True}
+        if self.behavior == "no-choices":
+            return 200, {"choices": []}
         text = _all_text(body) if self.behavior == "vulnerable" else "I will not do that."
         calls = [name for name in TOOLS if name in text] if self.behavior == "vulnerable" else []
         if self.provider == "anthropic":
@@ -294,6 +298,32 @@ def test_an_unreadable_reply_fails_the_run(serve, monkeypatch, provider: str) ->
 
     with pytest.raises(ModelTargetError, match="could not be read"):
         _observe(provider, serve(fake), _probe("direct-injection-001"), monkeypatch)
+
+
+def test_an_empty_choice_list_is_an_unreadable_reply(serve, monkeypatch) -> None:
+    fake = Fake("openai", "no-choices")
+
+    with pytest.raises(ModelTargetError, match="could not be read"):
+        _observe("openai", serve(fake), _probe("direct-injection-001"), monkeypatch)
+
+
+def test_a_key_with_a_trailing_newline_is_trimmed(serve, monkeypatch) -> None:
+    fake = Fake("anthropic", "refuse")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", KEY + "\n")
+    with ModelAgentTarget.start(_config("anthropic", serve(fake))) as target:
+        target.observe(_probe("direct-injection-001"))
+
+    assert fake.requests[0]["headers"]["x-api-key"] == KEY
+
+
+@pytest.mark.parametrize("bad", ["\n", "\r", "\x7f"])
+def test_a_key_with_a_control_character_inside_is_refused_unechoed(monkeypatch, bad: str) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", KEY[:6] + bad + KEY[6:])
+    config = ModelTargetConfig.model_validate({"transport": "anthropic", "model": "m"})
+
+    with pytest.raises(ModelTargetError, match="control character") as error:
+        ModelAgentTarget.start(config)
+    assert KEY[6:] not in str(error.value)
 
 
 def test_an_input_role_with_no_route_fails_instead_of_being_dropped(serve, monkeypatch) -> None:

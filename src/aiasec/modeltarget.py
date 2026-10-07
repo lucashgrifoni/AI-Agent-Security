@@ -125,9 +125,13 @@ class ModelAgentTarget:
         variable = config.key_variable
         if variable is None:
             return cls(config, None)
-        key = os.environ.get(variable)
+        # A key read from a file often ends with a newline; anything else that is not
+        # printable would make http.client fail with the key in its message.
+        key = (os.environ.get(variable) or "").strip()
         if not key:
             raise ModelTargetError(f"The API key variable {variable} is not set")
+        if any(ord(ch) < 32 or ord(ch) == 127 for ch in key):
+            raise ModelTargetError(f"The API key in {variable} contains a control character")
         return cls(config, key)
 
     @property
@@ -192,7 +196,9 @@ class ModelAgentTarget:
         try:
             reply = json.loads(payload)
             return PARSERS[provider](reply)
-        except (ValueError, RecursionError, KeyError, TypeError, AttributeError) as exc:
+        except (
+            ValueError, RecursionError, KeyError, IndexError, TypeError, AttributeError
+        ) as exc:
             raise ModelTargetError(f"The {provider} API reply could not be read") from exc
 
     def _headers(self) -> dict[str, str]:
