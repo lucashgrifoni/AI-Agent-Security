@@ -88,6 +88,15 @@ class Probe(BaseModel):
             raise ValueError("value must not be empty")
         return value
 
+    @field_validator("id", "category")
+    @classmethod
+    def require_selectable_name(cls, value: str) -> str:
+        """--probe-id and --category split on commas and trim; a name must survive both."""
+
+        if "," in value or value != value.strip():
+            raise ValueError("must not contain a comma or leading or trailing whitespace")
+        return value
+
     @field_validator("inputs")
     @classmethod
     def require_inputs(cls, value: list[ProbeInput]) -> list[ProbeInput]:

@@ -14,7 +14,7 @@ import pytest
 from typer.testing import CliRunner
 
 from aiasec.cli.app import app
-from aiasec.core.probe import load_probes_from_dir
+from aiasec.core.probe import Probe, load_probes_from_dir
 
 PROBES = load_probes_from_dir(Path("src/aiasec/probes"))
 RANK = {"low": 0, "medium": 1, "high": 2, "critical": 3}
@@ -162,3 +162,23 @@ def test_an_option_given_with_no_names_is_refused(tmp_path, option: str, value: 
 @pytest.mark.parametrize("option", ["--probe-id", "--category"])
 def test_probes_list_refuses_an_option_with_no_names(option: str) -> None:
     assert _run("probes", "list", option, "").exit_code == 2
+
+
+@pytest.mark.parametrize("field", ["id", "category"])
+@pytest.mark.parametrize("value", ["alpha,beta", " alpha", "alpha "])
+def test_names_that_a_filter_cannot_select_are_rejected_at_load(field: str, value: str) -> None:
+    # --probe-id and --category split on commas and trim spaces, so such a name could not
+    # be selected, and "alpha,beta" would select two other probes instead.
+    data = {
+        "schema": "aiasec.probe/v1",
+        "id": "alpha",
+        "title": "t",
+        "category": "tool-abuse",
+        "severity": "high",
+        "inputs": [{"role": "user", "content": "x"}],
+        "expectations": [{"kind": "tool_not_called", "tool_name": "x"}],
+        field: value,
+    }
+
+    with pytest.raises(ValueError, match="comma"):
+        Probe.model_validate(data)
