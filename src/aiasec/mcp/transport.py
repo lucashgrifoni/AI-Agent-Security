@@ -14,6 +14,12 @@ from typing import Any, Protocol, TextIO, cast
 
 JsonObject = dict[str, Any]
 
+# A target controls what it sends. These bounds keep a flooding or endless peer from
+# exhausting memory: the reader thread stops pulling from the pipe once this many
+# messages wait unread, and a single message may not exceed this many characters.
+MAX_QUEUED_MESSAGES = 64
+MAX_MESSAGE_CHARS = 4 * 1024 * 1024
+
 
 class McpTransportError(RuntimeError):
     """Raised when a JSON-RPC transport cannot read or write messages."""
@@ -77,14 +83,20 @@ class LineJsonRpcTransport:
         self._writer = writer
         self._receive_timeout_seconds = receive_timeout_seconds
         self._stuck_writer: threading.Thread | None = None
-        self._lines: queue.Queue[str | McpTransportError] = queue.Queue()
-        threading.Thread(target=self._pump, daemon=True).start()
+        self._lines: queue.Queue[str | McpTransportError] = queue.Queue(MAX_QUEUED_MESSAGES)
+        self._reader_thread = threading.Thread(target=self._pump, daemon=True)
+        self._reader_thread.start()
 
     def _pump(self) -> None:
         end: str | McpTransportError = ""  # end of stream
         try:
-            for line in self._reader:
-                self._lines.put(line)
+            while line := self._reader.readline(MAX_MESSAGE_CHARS + 1):
+                if len(line) > MAX_MESSAGE_CHARS and not line.endswith("\n"):
+                    end = McpTransportError(
+                        f"Target sent a JSON-RPC message longer than {MAX_MESSAGE_CHARS} characters"
+                    )
+                    break
+                self._lines.put(line)  # blocks while the queue is full: the pipe pushes back
         except (OSError, ValueError) as exc:
             end = McpTransportError(f"Unable to read JSON-RPC message from transport: {exc}")
         self._lines.put(end)
@@ -157,10 +169,13 @@ class LineJsonRpcTransport:
     def close(self) -> None:
         """Close the underlying streams.
 
-        A stream with a stuck write stays open: closing it would wait for that write.
+        A stream another thread is still writing to or reading from stays open: closing
+        it would wait for that call, which a silent or stuck peer may never return.
         """
 
-        streams = (self._reader,) if self._write_in_flight() else (self._writer, self._reader)
+        streams = [] if self._write_in_flight() else [self._writer]
+        if not self._reader_thread.is_alive():
+            streams.append(self._reader)
         for stream in streams:
             with suppress(OSError):
                 stream.close()

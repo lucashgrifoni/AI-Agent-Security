@@ -14,6 +14,10 @@ All notable changes to this project will be documented in this file.
   `server/discover` probe has the same single deadline.
 - A target reply with deeply nested JSON fails the run as a contract error (exit 2);
   it used to escape as a `RecursionError` traceback with exit 1.
+- An MCP target can no longer exhaust aiasec's memory: at most 64 of its messages wait
+  unread, so a flooding target meets the pipe's backpressure, and a message longer
+  than 4,194,304 characters fails the run. `close()` no longer waits on a stream another thread is
+  still reading or writing.
 - Only the errors MCP 2026-07-28 defines (`-32020`, `-32021`, `-32022`) mark a server
   as modern. Any other code in the reserved `-32020` to `-32099` range, such as
   `-32042` from 2025-11-25, now leads to the `initialize` fallback instead of failing

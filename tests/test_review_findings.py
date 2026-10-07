@@ -8,6 +8,7 @@ deadline, so a regression makes the suite fail instead of stalling it.
 from __future__ import annotations
 
 import io
+import os
 import socket
 import sys
 import threading
@@ -174,6 +175,56 @@ def test_the_line_transport_gives_up_on_a_write_that_never_ends() -> None:
     with pytest.raises(McpTransportError, match="never finished"):
         _finishes_within(3, lambda: adapter.request("ping"))
     _finishes_within(3, transport.close)
+
+
+# --- PR #10 third review: a flooding or silent peer cannot exhaust memory or hang close
+
+
+class Flood(io.StringIO):
+    """A peer that never stops sending notifications."""
+
+    def readline(self, size: int | None = -1) -> str:
+        return '{"jsonrpc":"2.0","method":"notifications/progress"}\n'
+
+    def __iter__(self) -> Flood:
+        return self
+
+    def __next__(self) -> str:
+        return self.readline()
+
+
+def test_a_flooding_peer_cannot_fill_memory() -> None:
+    transport = LineJsonRpcTransport(reader=Flood(), writer=io.StringIO())
+    time.sleep(0.5)
+
+    # Nobody reads, so the reader thread must stop at a small bound instead of queueing
+    # everything the peer sends.
+    assert transport._lines.qsize() <= 1024
+
+
+class Endless(io.StringIO):
+    """A single message that never ends."""
+
+    def readline(self, size: int | None = -1) -> str:
+        return "x" * (size if size and size > 0 else 1_000_000)
+
+
+def test_a_message_without_an_end_is_rejected_at_a_size_limit() -> None:
+    transport = LineJsonRpcTransport(reader=Endless(), writer=io.StringIO())
+
+    with pytest.raises(McpTransportError, match="longer than"):
+        transport.receive(timeout=5)
+
+
+def test_close_does_not_wait_for_a_read_from_a_silent_pipe() -> None:
+    read_fd, write_fd = os.pipe()
+    reader = os.fdopen(read_fd, "r", encoding="utf-8")
+    transport = LineJsonRpcTransport(reader=reader, writer=io.StringIO())
+    time.sleep(0.2)  # the reader thread is now blocked on the silent pipe
+    try:
+        _finishes_within(3, transport.close)
+    finally:
+        os.close(write_fd)  # end of stream: the blocked read returns
 
 
 # --- Deeply nested JSON from a target is a contract error, not a traceback --------
