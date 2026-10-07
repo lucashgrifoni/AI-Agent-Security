@@ -283,16 +283,29 @@ def _reason(payload: bytes, secret: str | None) -> str:
     return f": {message[:200]}"
 
 
-def _observed(text: str, calls: list[ToolCall], *, refused: bool) -> tuple[str, list[ToolCall]]:
-    """A reply with no text and no tool call is a contract error, not a pass.
+def _observed(text: Any, calls: list[ToolCall], *, refused: bool) -> tuple[str, list[ToolCall]]:
+    """Check what a reply carried before it is scored.
 
-    It would pass every pattern check without the model having answered. Only a
-    refusal the API itself signals counts as an empty answer.
+    The text must be a string, and a reply with no text and no tool call is a contract
+    error, not a pass: it would pass every pattern check without the model having
+    answered. Only a refusal the API itself signals counts as an empty answer.
     """
 
+    if text is None:
+        text = ""
+    if not isinstance(text, str):
+        raise ValueError("the reply text is not a string")
     if not text and not calls and not refused:
         raise ValueError("the reply has no text and no tool call")
     return text, calls
+
+
+def _call(name: Any, arguments: Any) -> ToolCall:
+    """A tool call the model asked for; a blank name would match no check."""
+
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("a tool call has no name")
+    return ToolCall(name=name, arguments=arguments)
 
 
 # Anthropic Messages API: https://platform.claude.com/docs/en/api/messages
@@ -330,7 +343,7 @@ def _anthropic_reply(reply: dict[str, Any]) -> tuple[str, list[ToolCall]]:
         if block["type"] == "text":
             texts.append(block["text"])
         elif block["type"] == "tool_use":
-            calls.append(ToolCall(name=block["name"], arguments=block["input"]))
+            calls.append(_call(block["name"], block["input"]))
     return _observed("\n".join(texts), calls, refused=reply.get("stop_reason") == "refusal")
 
 
@@ -392,9 +405,12 @@ def _openai_reply(reply: dict[str, Any]) -> tuple[str, list[ToolCall]]:
             raise ValueError("unsupported tool call type")
         function = call["function"]
         # The arguments are a JSON string, possibly invalid; the evaluator handles both.
-        calls.append(ToolCall(name=function["name"], arguments=function["arguments"]))
+        calls.append(_call(function["name"], function["arguments"]))
+    # A refusal arrives as message.refusal, with no content; it is the model's reply.
+    refusal = message.get("refusal")
+    text = refusal if isinstance(refusal, str) and refusal else message.get("content")
     refused = choice.get("finish_reason") == "content_filter"
-    return _observed(message.get("content") or "", calls, refused=refused)
+    return _observed(text, calls, refused=refused)
 
 
 # Ollama /api/chat: https://docs.ollama.com/api/chat
@@ -416,10 +432,10 @@ def _ollama_body(transcript: Transcript, config: ModelTargetConfig) -> dict[str,
 def _ollama_reply(reply: dict[str, Any]) -> tuple[str, list[ToolCall]]:
     message = reply["message"]
     calls = [
-        ToolCall(name=call["function"]["name"], arguments=call["function"].get("arguments"))
+        _call(call["function"]["name"], call["function"].get("arguments"))
         for call in message.get("tool_calls") or []
     ]
-    return _observed(message.get("content") or "", calls, refused=False)
+    return _observed(message.get("content"), calls, refused=False)
 
 
 RENDERERS = {"anthropic": _anthropic_body, "openai": _openai_body, "ollama": _ollama_body}
