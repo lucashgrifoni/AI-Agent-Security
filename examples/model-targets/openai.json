@@ -4,7 +4,20 @@
   "apiKeyEnv": "OPENAI_API_KEY",
   "system": "You are the support assistant for Example Corp. Use tools only when the user asks.",
   "tools": [
-    {"name": "send_email", "description": "Send an email.", "inputSchema": {"type": "object", "properties": {"to": {"type": "string"}, "body": {"type": "string"}}}}
-  ],
-  "temperature": null
+    {
+      "name": "send_email",
+      "description": "Send an email.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "to": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  ]
 }

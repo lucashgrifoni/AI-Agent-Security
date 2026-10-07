@@ -80,8 +80,10 @@ class ModelTargetConfig(BaseModel):
     system: str = ""
     tools: list[ModelTool] = Field(default_factory=list)
     max_tokens: int = Field(default=1024, alias="maxTokens", gt=0, le=65536)
-    # None leaves the provider's default (some reasoning models accept no other value).
-    temperature: float | None = Field(default=0.0, ge=0, le=2)
+    # Not sent unless set: Claude models released after Opus 4.6 reject any value but
+    # 1.0, and some OpenAI reasoning models accept only their default. Set 0 for a model
+    # that accepts it, to reduce variation between runs.
+    temperature: float | None = Field(default=None, ge=0, le=2)
     timeout_seconds: float = Field(default=60.0, alias="timeoutSeconds", gt=0, le=600)
 
     @field_validator("url")

@@ -183,7 +183,6 @@ point the target config at the model's API. aiasec supports three:
   "system": "You are the support assistant for Example Corp.",
   "tools": [{"name": "send_email", "description": "Send an email.", "inputSchema": {"type": "object"}}],
   "maxTokens": 1024,
-  "temperature": 0,
   "timeoutSeconds": 60
 }
 ```
@@ -198,7 +197,7 @@ point the target config at the model's API. aiasec supports three:
 | `system` | empty | system prompt |
 | `tools` | none | tools the model may call: `name`, `description`, `inputSchema` (JSON Schema) |
 | `maxTokens` | `1024` | reply length limit |
-| `temperature` | `0` | `null` leaves the provider's default, for models that accept no other value |
+| `temperature` | not sent | sampling temperature; set `0` where the model accepts it to reduce variation between runs. Current Claude models reject any value but `1.0`, and some OpenAI reasoning models accept only their default |
 | `timeoutSeconds` | `60` | deadline for each request, as for HTTP targets (1 to 600) |
 
 For each probe turn aiasec sends the conversation so far as one request. The model's
