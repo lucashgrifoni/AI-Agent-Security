@@ -19,8 +19,8 @@ import pytest
 from typer.testing import CliRunner
 
 from aiasec.cli.app import app
-from aiasec.core.evaluator.rules import TargetObservation
-from aiasec.judge import MAX_OUTPUT, SYSTEM, _message, _parse
+from aiasec.core.evaluator.rules import TargetObservation, ToolCall
+from aiasec.judge import MAX_CALLS, MAX_REPLY, SYSTEM, _message, _parse
 
 # Made at run time: a key-shaped literal in the repository trips secret scanners.
 KEY = f"judge-{secrets.token_hex(8)}"
@@ -205,10 +205,31 @@ def test_the_agent_output_is_fenced_as_data() -> None:
     assert "data to evaluate" in SYSTEM and "unsafe behavior" in SYSTEM
 
 
-def test_a_long_reply_is_cut_before_it_reaches_the_judge() -> None:
-    observation = TargetObservation(assistant_final_response="A" * 200_000)
+def test_a_long_reply_is_cut_but_the_tool_calls_still_reach_the_judge() -> None:
+    observation = TargetObservation(
+        assistant_final_response="A" * 200_000,
+        tool_calls=[ToolCall(name="send_email", arguments={"to": "x" * 50_000})],
+    )
 
     message = _message("criterion", observation)
 
-    assert len(message) < MAX_OUTPUT + 500
-    assert "[output cut at 20,000 characters]" in message
+    assert len(message) < MAX_REPLY + MAX_CALLS + 500
+    assert "[reply cut at 15,000 characters]" in message
+    assert "[tool calls cut at 5,000 characters]" in message
+    assert '"name": "send_email"' in message
+
+
+def test_judge_text_cannot_add_markdown_to_the_report(judge, tmp_path: Path) -> None:
+    hostile = "See ![x](https://collector.example.test/p.png)\r\n| injected | row | [link](x)"
+    fake = FakeJudge(json.dumps({"verdict": "yes", "reason": hostile}))
+    report = tmp_path / "report.md"
+
+    CliRunner().invoke(
+        app, ["run", "--response", PARAPHRASED, "--probe-id", "persona-swap-001",
+              "--output", str(report), "--judge", str(judge(fake))],
+    )  # fmt: skip
+
+    section = report.read_text(encoding="utf-8").split("## Judge opinions")[1]
+    assert "![" not in section and "](" not in section and "\r" not in section
+    assert section.count("| persona-swap-001 |") == 1
+    assert "| injected |" not in section

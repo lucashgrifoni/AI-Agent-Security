@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from collections.abc import Mapping, Sequence
 
@@ -13,6 +14,9 @@ from aiasec.outputs.sarif import (
     SINGLE_OBSERVATION_MODE,
 )
 
+# Characters that start inline Markdown (code, emphasis, links, images, HTML) or end a
+# table cell. Text that is one line never starts a block, so block syntax needs nothing.
+MARKDOWN_SYNTAX = re.compile(r"([\\`*_\[\]()!<>|~])")
 MODE_EXPLANATIONS = {
     SINGLE_OBSERVATION_MODE: (
         "Every probe was scored against the same supplied observation. A passing probe means\n"
@@ -114,7 +118,7 @@ def _judge_section(judge: Mapping[str, object] | None) -> list[str]:
         flag = " (disagrees)" if opinion["disagrees"] else ""
         lines.append(
             f"| {_escape(opinion['probeId'])} | {rules} | "
-            f"{_escape(opinion['verdict'])}{flag} | {_escape(opinion['reason'])} |"
+            f"{_escape_text(opinion['verdict'])}{flag} | {_escape_text(opinion['reason'])} |"
         )
     return lines
 
@@ -132,4 +136,14 @@ def _describe(selection: Mapping[str, object]) -> str:
 
 def _escape(value: str) -> str:
     return value.replace("|", "\\|").replace("\n", " ")
+
+
+def _escape_text(value: str) -> str:
+    """Text a model wrote: one line, with every Markdown character escaped.
+
+    The judge's reason can echo the reply it read, so it must not turn into a link, an
+    image that loads a URL when the report is rendered, or extra table rows.
+    """
+
+    return MARKDOWN_SYNTAX.sub(r"\\\1", " ".join(value.split()))
 

@@ -1,3 +1,5 @@
 # Known false positives, one fingerprint each (commit:file:rule:line).
 # A fake API key literal in a test, made at run time since the commit after it.
 29c0093bae76d0b4c9414e73d2440d664aa6a4ec:tests/test_model_targets.py:generic-api-key:27
+# A fake judge API key literal in a test, made at run time since the commit after it.
+04d27fae717d75fe76a057feae3a58418dbdbf19:tests/test_judge.py:generic-api-key:24

@@ -13,7 +13,8 @@ All notable changes to this project will be documented in this file.
   behavior in words; `crescendo-001` and `persona-swap-001` have one). Opinions are
   reported next to the rules result, with disagreements marked, and never change the
   results, the gate or the exit code. The agent's output reaches the judge between
-  random-code tags and is cut at 20,000 characters.
+  random-code tags, the reply cut at 15,000 characters and the tool calls at 5,000;
+  the judge's text is escaped in the Markdown report.
 - Model API targets: a target config with `transport` `anthropic`, `openai` (or a
   compatible server) or `ollama` sends each probe turn straight to the model with your
   system prompt and tool definitions. Tool calls the model asks for are recorded with
