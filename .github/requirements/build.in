@@ -1,0 +1,5 @@
+# Builds the wheel and sdist without build isolation (hatchling comes from here) and
+# writes the CycloneDX SBOM.
+build>=1.6.1
+cyclonedx-bom>=7.4.0,<8
+hatchling>=1.25

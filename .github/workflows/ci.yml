@@ -12,6 +12,9 @@
 # Supply-chain hardening:
 #   - Actions are pinned to immutable commit SHAs; the trailing comment records the
 #     tag. Dependabot (`github-actions`) refreshes the pins through pull requests.
+#   - Python tools install from hash-locked files in .github/requirements (compiled
+#     with `uv pip compile --generate-hashes`; Dependabot's `uv` ecosystem refreshes
+#     them). The user-journey steps install the built wheel the way a user would.
 #   - On push, the build job attests SLSA build provenance for dist/*. It is skipped
 #     on pull_request, so fork PRs cannot mint attestations.
 #
@@ -74,7 +77,11 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install dev dependencies
-        run: python -m pip install -e ".[dev]"
+        # Hash-locked (.github/requirements/ci.txt); the package itself adds no dependency
+        # and builds with the locked hatchling.
+        run: |
+          python -m pip install --require-hashes -r .github/requirements/ci.txt
+          python -m pip install --no-deps --no-build-isolation -e .
 
       - name: Ruff
         run: python -m ruff check .
@@ -116,7 +123,11 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dev dependencies
-        run: python -m pip install -e ".[dev]"
+        # Hash-locked (.github/requirements/ci.txt); the package itself adds no dependency
+        # and builds with the locked hatchling.
+        run: |
+          python -m pip install --require-hashes -r .github/requirements/ci.txt
+          python -m pip install --no-deps --no-build-isolation -e .
 
       - name: Download the SARIF 2.1.0 schema
         run: curl --fail --silent --show-error --location "$SARIF_SCHEMA_URL" -o "$RUNNER_TEMP/sarif-schema-2.1.0.json"
@@ -164,9 +175,11 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Build wheel and sdist
+        # Hash-locked build tools; --no-isolation builds with the locked hatchling instead
+        # of fetching an unpinned one.
         run: |
-          python -m pip install "build>=1.2.0"
-          python -m build
+          python -m pip install --require-hashes -r .github/requirements/build.txt
+          python -m build --no-isolation
 
       - name: Every bundled probe ships in the wheel
         run: |
