@@ -182,3 +182,19 @@ def test_names_that_a_filter_cannot_select_are_rejected_at_load(field: str, valu
 
     with pytest.raises(ValueError, match="comma"):
         Probe.model_validate(data)
+
+
+@pytest.mark.parametrize(
+    ("option", "value"),
+    [
+        ("--category", "jailbreak,"),
+        ("--category", ",jailbreak"),
+        ("--probe-id", "direct-injection-001,,"),
+        ("--probe-id", "direct-injection-001, ,persona-swap-001"),
+    ],
+)
+def test_a_blank_segment_next_to_a_valid_name_is_refused(tmp_path, option: str, value: str) -> None:
+    code, document = _sarif(tmp_path, option, value)
+
+    assert code == 2
+    assert document == {}

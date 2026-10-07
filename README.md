@@ -138,8 +138,8 @@ aiasec run --target path/to/aiasec-target.json --execute --probe-id tool-coercio
 aiasec probes list --category tool-abuse --min-severity critical
 ```
 
-A category or id that matches no loaded probe exits 2 and names it; an option given
-with no name (an unset variable, a stray comma) and a selection that matches nothing
+A category or id that matches no loaded probe exits 2 and names it; an empty name in
+either option (an unset variable, a stray comma) and a selection that matches nothing
 exit 2 too. A filtered report records the filters under
 `runs[].properties.aiasec.selection` in SARIF and in a `Selection` line in Markdown,
 because the gate only sees counts: gate a release on the full suite, not on a subset.

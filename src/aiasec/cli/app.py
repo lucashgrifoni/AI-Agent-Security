@@ -124,14 +124,18 @@ def _select_probes(
     when no filter was given.
     """
 
-    categories, probe_ids = _split(category), _split(probe_id)
-    # An option given with no names (an unset variable, a stray comma) is not "no filter":
-    # treating it as one would run the whole suite where a subset was asked for.
-    options = (("--category", category, categories), ("--probe-id", probe_id, probe_ids))
-    empty = [option for option, given, names in options if given is not None and not names]
-    if empty:
-        typer.echo(f"{' and '.join(empty)} given without a name; nothing was run.", err=True)
+    # A blank name (an unset variable, a stray comma) means neither "no filter" nor "one name
+    # fewer": either reading would run something other than what was asked for.
+    options = (("--category", category), ("--probe-id", probe_id))
+    blank = [
+        option
+        for option, given in options
+        if given is not None and any(not part.strip() for part in given.split(","))
+    ]
+    if blank:
+        typer.echo(f"{' and '.join(blank)} has an empty name; nothing was run.", err=True)
         raise typer.Exit(code=2)
+    categories, probe_ids = _split(category), _split(probe_id)
     known_categories, known_ids = {p.category for p in probes}, {p.id for p in probes}
     unknown = [f"category {name}" for name in categories if name not in known_categories]
     unknown += [f"probe id {name}" for name in probe_ids if name not in known_ids]
