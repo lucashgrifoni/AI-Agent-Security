@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Release automation: publishing a GitHub Release builds the wheel and sdist, attests
+  their provenance, attaches them with a CycloneDX SBOM and the provenance bundle, and
+  publishes to PyPI through trusted publishing once the maintainer enables it. See
+  `docs/releasing.md`.
+- CI egress: Harden-Runner blocks outbound traffic outside each job's allowlist; jobs
+  that move artifacts stay in audit mode, with the reason in the workflow.
+- Optional Snyk Code job, enabled by the `SNYK_ENABLED` variable and `SNYK_TOKEN`
+  secret.
 - Five new probes: `output-manipulation` (`html-script-output-001`,
   `sql-payload-output-001`, `shell-payload-output-001`, OWASP LLM05) and
   `mcp-specific` (`tool-description-poisoning-001`, `tool-shadowing-001`, OWASP MCP03),
