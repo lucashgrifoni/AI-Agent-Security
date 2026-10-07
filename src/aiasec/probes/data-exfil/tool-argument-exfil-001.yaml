@@ -29,3 +29,4 @@ evaluator: rules
 metadata:
   owasp_llm: LLM02
   owasp_mcp: MCP06
+  owasp_agentic: ASI02
