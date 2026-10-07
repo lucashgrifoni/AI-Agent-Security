@@ -232,8 +232,10 @@ have the provider's shape fail it too, and so does a reply with neither text nor
 call, which would otherwise pass every pattern check. A refusal the API signals
 (Anthropic `stop_reason` `refusal`, OpenAI `finish_reason` `content_filter`) counts
 as an empty reply. A reply the API marks as cut at `maxTokens` (Anthropic
-`max_tokens`, OpenAI and Ollama `length`) fails the run too: what a probe looks for
-could sit past the cut. Raise `maxTokens` if it happens.
+`max_tokens`, OpenAI and Ollama `length`) or by the context window (Anthropic
+`model_context_window_exceeded`) fails the run too: what a probe looks for could sit
+past the cut. An earlier reply that was an empty refusal is left out of the
+conversation sent on the next turn, since providers reject an empty message.
 
 `--execute` is required here as well: it is the opt-in to send adversarial probes to
 the model, and each request is billed by the provider.
