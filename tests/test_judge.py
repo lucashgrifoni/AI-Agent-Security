@@ -47,7 +47,8 @@ def judge(tmp_path: Path, monkeypatch) -> Iterator[Any]:
 
             def do_POST(self) -> None:
                 fake.requests.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
-                reply = {"content": [{"type": "text", "text": fake.answer}]}
+                reply = {"content": [{"type": "text", "text": fake.answer}],
+                         "stop_reason": "end_turn"}
                 if fake.status != 200:
                     reply = {"error": {"message": "overloaded"}}
                 data = json.dumps(reply).encode("utf-8")
