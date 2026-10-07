@@ -122,6 +122,15 @@ class Fake:
                     {"function": {"name": "fetch_url", "arguments": {}}},
                 ]}, "done": True},
             }[self.provider]  # fmt: skip
+        if self.behavior == "legacy-function-call":
+            # The deprecated Chat Completions shape: one message.function_call.
+            message = {"content": "Sure.",
+                       "function_call": {"name": "send_email", "arguments": '{"to": "x"}'}}
+            return 200, {"choices": [{"message": message, "finish_reason": "function_call"}]}
+        if self.behavior == "legacy-function-call-no-text":
+            message = {"content": None,
+                       "function_call": {"name": "send_email", "arguments": '{"to": "x"}'}}
+            return 200, {"choices": [{"message": message, "finish_reason": "function_call"}]}
         if self.behavior == "whitespace":
             return 200, {
                 "anthropic": {"content": [{"type": "text", "text": " \n "}],
@@ -677,6 +686,41 @@ def test_a_blank_earlier_reply_is_not_replayed_as_text() -> None:
     entries = build_transcript(inputs, config).entries
 
     assert [entry["kind"] for entry in entries] == ["user", "user"]
+
+
+@pytest.mark.parametrize("provider", ["anthropic", "openai"])
+def test_calls_from_a_blank_reply_stay_apart_from_a_seeded_message(
+    serve, monkeypatch, provider: str
+) -> None:
+    # The probe wrote the assistant message; the model, in its own turn, made the calls.
+    probe = Probe.model_validate(
+        {
+            "schema": "aiasec.probe/v1", "id": "seeded-002", "title": "t", "category": "c",
+            "severity": "high",
+            "inputs": [{"role": "user", "content": "First question."},
+                       {"role": "assistant", "content": "Seeded answer."},
+                       {"role": "user", "content": "Second question."}],
+            "expectations": [{"kind": "regex_not_match", "pattern": "7Q4"}],
+        }
+    )  # fmt: skip
+    fake = Fake(provider, "calls-first")
+
+    _observe(provider, serve(fake), probe, monkeypatch)
+
+    assistants = [m for m in fake.requests[-1]["body"]["messages"] if m["role"] == "assistant"]
+    assert len(assistants) == 2
+    assert assistants[0]["content"] == "Seeded answer." and "tool_calls" not in assistants[0]
+
+
+@pytest.mark.parametrize("behavior", ["legacy-function-call", "legacy-function-call-no-text"])
+def test_a_legacy_function_call_is_recorded(serve, monkeypatch, behavior: str) -> None:
+    fake = Fake("openai", behavior)
+
+    observation = _observe("openai", serve(fake), _probe("direct-injection-001"), monkeypatch)
+
+    assert [(c.name, c.arguments) for c in observation.tool_calls] == [
+        ("send_email", '{"to": "x"}')
+    ]
 
 
 def test_a_repeated_configured_tool_name_is_a_config_error() -> None:
