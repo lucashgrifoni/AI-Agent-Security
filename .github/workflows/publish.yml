@@ -184,16 +184,24 @@ jobs:
           path: release-assets/
 
       - name: Upload to the release
+        # No --clobber: a retried run that rebuilt the files fails here instead of
+        # replacing the assets with bytes PyPI may not have.
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.event.release.tag_name }}
-        run: gh release upload "$TAG" dist/* release-assets/* --clobber
+        run: gh release upload "$TAG" dist/* release-assets/*
 
   publish-pypi:
     name: Publish to PyPI
-    needs: build
+    # On a release, PyPI gets the files only after this run attached the same files to
+    # the GitHub Release, so the two can never serve different bytes. A manual run has
+    # no release-assets job and publishes once the build passes.
+    needs: [build, release-assets]
     if: >-
+      !cancelled() &&
+      needs.build.result == 'success' &&
+      contains(fromJSON('["success", "skipped"]'), needs.release-assets.result) &&
       vars.PYPI_PUBLISH == 'true' &&
       (github.event_name == 'release' ||
        (github.event_name == 'workflow_dispatch' && inputs.target == 'pypi'))

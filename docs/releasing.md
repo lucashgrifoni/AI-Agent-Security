@@ -29,10 +29,10 @@ tags; `testpypi` only deploys from `master`.
    `pyproject.toml`, `__version__` and the built metadata do not name one version,
    attests their provenance,
    attaches the wheel, sdist, CycloneDX SBOM (`aiasec.cdx.json`) and provenance bundle
-   (`aiasec.intoto.jsonl`) to the release, and, once approved in the `pypi`
-   environment, publishes to PyPI. A file PyPI already has fails the publish instead
-   of being skipped, so a rebuilt retry cannot leave PyPI and the release with
-   different files.
+   (`aiasec.intoto.jsonl`) to the release, and then, once approved in the `pypi`
+   environment, publishes the same files to PyPI. Neither step replaces a file that
+   already exists: a retried run fails instead, so PyPI and the release never serve
+   different bytes. To retry after a partial failure, delete the release assets first.
 
 To publish by hand (`Publish` > Run workflow), run it on the release tag: a PyPI
 publish without a tag, or on a tag that does not match the package version, stops
