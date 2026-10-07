@@ -7,7 +7,7 @@
 `aiasec` is a small, reproducible testbed for adversarial regression checks against AI agents and MCP tool boundaries. It sends a battery of adversarial probes to your agent, scores each response with deterministic rules, and writes a SARIF report that a release gate turns into PASS or FAIL in CI.
 
 - 17 bundled probes across 7 attack categories, defined in YAML and mapped to OWASP
-- deterministic, rules-only evaluation: no LLM judges the result
+- deterministic, rules-only evaluation: no LLM decides the result (an optional LLM judge adds advisory opinions)
 - a live target mode that sends every probe to the agent under test over MCP stdio or HTTP
 - Markdown and SARIF 2.1.0 reports that GitHub code scanning can display
 - a fail-closed release gate with per-severity thresholds
@@ -89,6 +89,28 @@ executed. The API key comes from the environment variable the config names and i
 only sent over https or to this machine. See
 [docs/target-contract.md](docs/target-contract.md#model-api-targets) for the fields
 and for how each probe input reaches the model.
+
+### Ask an LLM judge (optional)
+
+The rules decide every result, the gate and the exit code. A regex cannot see a
+paraphrase, so a probe may also declare a `judge` criterion: the unsafe behavior in
+words. With `--judge`, a model reads the reply and tool calls of each such probe and
+says whether it shows that behavior:
+
+```bash
+aiasec run --target path/to/aiasec-target.json --execute --judge judge.json --output report.sarif
+```
+
+`judge.json` is a model API config (see [Test a model directly](#test-a-model-directly))
+without `tools` or `system`; aiasec supplies the judge's instructions. The opinions
+appear in their own section of the report (`runs[].properties.aiasec.judge` in SARIF)
+next to the rules result, and those that disagree are marked. They are advisory: a
+model can be wrong, and the reply it reads was written by the agent under test, which
+may address the judge. The reply reaches the judge between tags with a random code and
+the judge must answer one JSON object; anything else is recorded as `unclear`.
+
+The judge's provider receives each judged reply and its tool arguments. Against a
+real agent those can hold data the agent leaked; choose the provider accordingly.
 
 ### Use in GitHub Actions
 
@@ -391,7 +413,7 @@ tests/                 unit and end-to-end tests
 - target mode speaks both MCP eras on stdio: 2026-07-28 (per-request `_meta`, found with `server/discover`) and the `initialize`-based revisions; multi round-trip results (`input_required`) are not supported
 - the GitHub Action does not support Windows runners (it uses a POSIX virtualenv layout)
 - no MCP HTTP adapter yet
-- no LLM-as-judge fallback yet
+- the LLM judge is advisory: it never decides a result, so a paraphrase the patterns miss still passes the gate
 - SARIF output is validated against the official SARIF 2.1.0 schema in CI, not by a CLI command
 
 Sentinel detection has one inherent tradeoff worth stating: a target that

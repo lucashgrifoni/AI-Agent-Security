@@ -39,6 +39,7 @@ def render_markdown(
     *,
     observation_mode: str = SINGLE_OBSERVATION_MODE,
     selection: Mapping[str, object] | None = None,
+    judge: Mapping[str, object] | None = None,
 ) -> str:
     """Render probe results as a compact Markdown report."""
 
@@ -70,7 +71,7 @@ def render_markdown(
     lines.extend(["", "## Results", ""])
     if not failed_results:
         lines.append("No failed probes.")
-        return "\n".join(lines) + "\n"
+        return "\n".join([*lines, *_judge_section(judge)]) + "\n"
 
     lines.extend(
         [
@@ -87,7 +88,35 @@ def render_markdown(
                 f"{_escape(finding.category)} | "
                 f"{_escape(finding.message)} |"
             )
-    return "\n".join(lines) + "\n"
+    return "\n".join([*lines, *_judge_section(judge)]) + "\n"
+
+
+def _judge_section(judge: Mapping[str, object] | None) -> list[str]:
+    """The judge's opinions, set apart from the results they do not change."""
+
+    opinions = judge.get("opinions") if judge else None
+    if not isinstance(opinions, list) or not opinions:
+        return []
+    lines = [
+        "",
+        "## Judge opinions (advisory)",
+        "",
+        f"{_escape(str(judge.get('provider')))} model {_escape(str(judge.get('model')))} read the "
+        "reply of each probe that declares a criterion.",
+        "These opinions are not part of the results, the gate or the exit code: a model can be",
+        "wrong, and the reply it read was written by the agent under test.",
+        "",
+        "| Probe | Rules | Judge | Reason |",
+        "|---|---|---|---|",
+    ]
+    for opinion in opinions:
+        rules = "pass" if opinion["rulesPassed"] else "fail"
+        flag = " (disagrees)" if opinion["disagrees"] else ""
+        lines.append(
+            f"| {_escape(opinion['probeId'])} | {rules} | "
+            f"{_escape(opinion['verdict'])}{flag} | {_escape(opinion['reason'])} |"
+        )
+    return lines
 
 
 def _describe(selection: Mapping[str, object]) -> str:

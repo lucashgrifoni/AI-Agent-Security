@@ -131,6 +131,14 @@ class ModelAgentTarget:
         return cls(config, key)
 
     @property
+    def provider(self) -> str:
+        return self._config.transport
+
+    @property
+    def model(self) -> str:
+        return self._config.model
+
+    @property
     def label(self) -> str:
         host = urlsplit(self._config.endpoint).netloc
         return f"{self._config.transport} model {self._config.model} at {host}"
@@ -154,8 +162,18 @@ class ModelAgentTarget:
     ) -> None:
         self.close()
 
+    def complete(self, system: str, message: str) -> str:
+        """Send one user message with this system prompt and no tools; return the text."""
+
+        transcript = Transcript(
+            system=system, tools=[], entries=[{"kind": "user", "text": message}]
+        )
+        return self._request(transcript)[0]
+
     def _send(self, inputs: list[dict[str, Any]]) -> tuple[str, list[ToolCall]]:
-        transcript = build_transcript(inputs, self._config)
+        return self._request(build_transcript(inputs, self._config))
+
+    def _request(self, transcript: Transcript) -> tuple[str, list[ToolCall]]:
         provider = self._config.transport
         body = RENDERERS[provider](transcript, self._config)
         endpoint = self._config.endpoint

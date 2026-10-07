@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Optional LLM judge: `aiasec run --judge judge.json` asks a model, through the same
+  model API config, about each probe that declares a `judge` criterion (the unsafe
+  behavior in words; `crescendo-001` and `persona-swap-001` have one). Opinions are
+  reported next to the rules result, with disagreements marked, and never change the
+  results, the gate or the exit code. The agent's output reaches the judge between
+  random-code tags and is cut at 20,000 characters.
 - Model API targets: a target config with `transport` `anthropic`, `openai` (or a
   compatible server) or `ollama` sends each probe turn straight to the model with your
   system prompt and tool definitions. Tool calls the model asks for are recorded with
