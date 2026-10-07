@@ -29,7 +29,7 @@ import os
 import re
 from collections.abc import Container
 from types import TracebackType
-from typing import Any, Literal
+from typing import Any, Literal, NamedTuple
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -183,14 +183,14 @@ class ModelAgentTarget:
         conversation it actually had.
         """
 
-        # Tool calls by the position of the reply that made them: drive_conversation
-        # appends each reply to the history right after the inputs it answered.
-        earlier: dict[int, list[ToolCall]] = {}
+        # Earlier replies by their position: drive_conversation appends each reply to
+        # the history right after the inputs it answered.
+        earlier: dict[int, EarlierReply] = {}
 
         def send(arguments: dict[str, Any]) -> tuple[str, list[ToolCall]]:
             inputs = arguments["inputs"]
-            text, calls = self._request(build_transcript(inputs, self._config, earlier))
-            earlier[len(inputs)] = calls
+            text, calls, blocks = self._request(build_transcript(inputs, self._config, earlier))
+            earlier[len(inputs)] = EarlierReply(calls, blocks)
             return text, calls
 
         return drive_conversation(probe, send)
@@ -217,7 +217,9 @@ class ModelAgentTarget:
         )
         return self._request(transcript)[0]
 
-    def _request(self, transcript: Transcript) -> tuple[str, list[ToolCall]]:
+    def _request(
+        self, transcript: Transcript
+    ) -> tuple[str, list[ToolCall], list[dict[str, Any]] | None]:
         provider = self._config.transport
         body = RENDERERS[provider](transcript, self._config)
         endpoint = self._config.endpoint
@@ -255,7 +257,9 @@ class ModelAgentTarget:
                 f"The {provider} reply was cut at maxTokens ({self._config.max_tokens}); "
                 "raise maxTokens in the target config so the whole reply is scored"
             )
-        return text, calls
+        # Anthropic content blocks, thinking included, go back unchanged on later turns.
+        blocks = _replay_blocks(reply) if provider == "anthropic" else None
+        return text, calls, blocks
 
     def _headers(self) -> dict[str, str]:
         if self._config.transport == "anthropic":
@@ -272,22 +276,34 @@ class Transcript(BaseModel):
     system: str
     tools: list[ModelTool]
     # Entries: {"kind": "user"|"assistant", "text"}
+    #          | {"kind": "blocks", "blocks"} (an Anthropic reply's content, as returned)
     #          | {"kind": "call", "id", "name", "arguments", "joins"}
     #            (joins: the call continues the model reply in the message before it)
     #          | {"kind": "result", "id", "name", "text"}
     entries: list[dict[str, Any]]
 
 
+class EarlierReply(NamedTuple):
+    """A model reply replayed on later turns.
+
+    blocks holds an Anthropic reply's content blocks exactly as returned, thinking
+    blocks included; it is None for the other providers.
+    """
+
+    calls: list[ToolCall]
+    blocks: list[dict[str, Any]] | None
+
+
 def build_transcript(
     inputs: list[dict[str, Any]],
     config: ModelTargetConfig,
-    earlier_calls: dict[int, list[ToolCall]] | None = None,
+    earlier: dict[int, EarlierReply] | None = None,
 ) -> Transcript:
     """Map probe inputs to messages, tool calls with results, and tool definitions.
 
-    earlier_calls maps the position in inputs of each earlier model reply to the tool
-    calls it made; they follow that reply, each with a result saying the tool was not
-    run. A probe-authored assistant input has no entry.
+    earlier maps the position in inputs of each earlier model reply to that reply; its
+    tool calls follow it, each with a result saying the tool was not run. A
+    probe-authored assistant input has no entry.
     """
 
     system = [config.system] if config.system else []
@@ -301,12 +317,26 @@ def build_transcript(
             system.append(content)
         elif role in ("user", "assistant"):
             text = "\n\n".join(filter(None, [content, _documents_text(documents)]))
+            reply = (earlier or {}).get(index) if role == "assistant" else None
+            if reply is not None and reply.blocks is not None:
+                # Anthropic requires a reply's thinking blocks back, complete and in
+                # order, whenever a tool result follows; the whole reply goes back.
+                if reply.blocks:
+                    entries.append({"kind": "blocks", "blocks": reply.blocks})
+                for block in reply.blocks:
+                    if block["type"] == "tool_use":
+                        tools.setdefault(block["name"], ModelTool(name=block["name"]))
+                        entries.append(
+                            {"kind": "result", "id": block["id"], "name": block["name"],
+                             "text": NOT_RUN}
+                        )  # fmt: skip
+                continue
             # An earlier blank reply (a refusal the API signalled, or text beside tool
             # calls) has nothing to replay, and providers reject a blank message.
             if text.strip() or role == "user":
                 entries.append({"kind": role, "text": text})
             if role == "assistant":
-                calls = (earlier_calls or {}).get(index, [])
+                calls = reply.calls if reply else []
                 ids = [f"aiasec_reply{index}_call{n}" for n in range(1, len(calls) + 1)]
                 # A reply's calls stay together, as one response, then all their results.
                 # They join the reply's own text when it has some, never a message the
@@ -438,6 +468,17 @@ def _observed(text: Any, calls: list[ToolCall], *, refused: bool) -> tuple[str, 
     return text, calls
 
 
+def _replay_blocks(reply: dict[str, Any]) -> list[dict[str, Any]]:
+    """An Anthropic reply's content blocks to send back unchanged, thinking included.
+
+    Blank text blocks are left out: the API rejects them, and they carry nothing.
+    """
+
+    return [
+        block for block in reply["content"] if block["type"] != "text" or block["text"].strip()
+    ]
+
+
 def _call(name: Any, arguments: Any, provider: str) -> ToolCall:
     """A tool call the model asked for, under a name the provider's API accepts.
 
@@ -456,6 +497,8 @@ def _anthropic_body(transcript: Transcript, config: ModelTargetConfig) -> dict[s
     for entry in transcript.entries:
         if entry["kind"] in ("user", "assistant"):
             messages.append({"role": entry["kind"], "content": entry["text"]})
+        elif entry["kind"] == "blocks":
+            messages.append({"role": "assistant", "content": entry["blocks"]})
         elif entry["kind"] == "call":
             block = {
                 "type": "tool_use",

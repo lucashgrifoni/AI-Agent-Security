@@ -210,7 +210,8 @@ never executed**: the turn ends there, so a model that would call `send_email` f
 the probe without anything being sent. On the next turn of a multi-turn probe, those
 calls are replayed in the reply that made them, all in one assistant message as the API
 returned them, followed by one result each saying aiasec did not run the tool, so the
-model sees the conversation it actually had. The Anthropic API combines consecutive
+model sees the conversation it actually had. An Anthropic reply goes back exactly as it
+came, thinking blocks included, which the API requires whenever a tool result follows. The Anthropic API combines consecutive
 assistant messages, so when a probe's own `assistant` input comes right before a reply
 that has only tool calls, Claude reads the two as one turn.
 
