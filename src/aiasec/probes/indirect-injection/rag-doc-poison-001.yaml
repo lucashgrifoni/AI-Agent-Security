@@ -23,3 +23,4 @@ expectations:
 evaluator: rules
 metadata:
   owasp_llm: LLM01
+  owasp_mcp: MCP06
