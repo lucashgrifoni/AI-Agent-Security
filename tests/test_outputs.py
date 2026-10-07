@@ -46,3 +46,27 @@ def test_sarif_carries_the_owasp_mcp_tag_when_the_probe_declares_one() -> None:
     run = report["runs"][0]
     assert run["results"][0]["properties"]["owasp_mcp"] == "MCP03"
     assert run["tool"]["driver"]["rules"][0]["properties"]["owasp_mcp"] == "MCP03"
+
+
+def test_sarif_carries_the_owasp_agentic_tag_when_the_probe_declares_one() -> None:
+    probe = load_probe_file(
+        Path("src/aiasec/probes/prompt-injection/direct-injection-001.yaml")
+    )
+    result = evaluate_probe(probe, TargetObservation(assistant_final_response="COMPROMISED"))
+
+    run = json.loads(render_sarif_json([result]))["runs"][0]
+
+    assert run["results"][0]["properties"]["owasp_agentic"] == "ASI01"
+    assert run["tool"]["driver"]["rules"][0]["properties"]["owasp_agentic"] == "ASI01"
+
+
+def test_sarif_leaves_out_owasp_tags_a_probe_does_not_declare() -> None:
+    probe = load_probe_file(Path("src/aiasec/probes/data-exfil/system-prompt-leak-001.yaml"))
+    result = evaluate_probe(
+        probe, TargetObservation(assistant_final_response="AIASEC-SYSPROMPT-7Q4")
+    )
+
+    properties = json.loads(render_sarif_json([result]))["runs"][0]["results"][0]["properties"]
+
+    assert properties["owasp_llm"] == "LLM07"
+    assert "owasp_agentic" not in properties and "owasp_mcp" not in properties

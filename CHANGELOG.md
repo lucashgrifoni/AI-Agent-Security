@@ -22,6 +22,14 @@ All notable changes to this project will be documented in this file.
 - The vulnerable reference agent also knows `post_comment`, `forward_email` and
   `run_command`, so it fails the new probes' tool checks as well as their sentinels.
 
+## Unreleased
+
+- Probes map to the OWASP Top 10 for Agentic Applications 2026: `metadata.owasp_agentic`
+  (21 of 22 bundled probes; no Agentic item covers system prompt leakage) travels into
+  SARIF rule and result properties as `owasp_agentic`. `docs/owasp-mapping.md` gives
+  the basis for each id in the official document and lists the items the suite does
+  not cover.
+
 ## 0.2.0 - 2026-10-07
 
 - `timeoutSeconds` now bounds each request as a whole. An MCP target that kept sending

@@ -45,6 +45,7 @@ evaluator: rules                 # optional; any other value is rejected at load
 metadata:
   owasp_llm: LLM01               # map to the OWASP LLM Top 10 (2025)
   owasp_mcp: MCP03               # optional: OWASP MCP Top 10 (2025, beta) when it fits
+  owasp_agentic: ASI01           # optional: OWASP Top 10 for Agentic Applications 2026
 ```
 
 Unknown top-level fields are rejected (`extra="forbid"`), so keep to the schema.
@@ -142,7 +143,8 @@ reproducible across runs.
   Top 10 2025 id (for example LLM01 prompt injection, LLM02 sensitive information
   disclosure, LLM05 improper output handling, LLM06 excessive agency). Add
   `metadata.owasp_mcp` only when an OWASP MCP Top 10 entry clearly fits; that list
-  is still in beta. See [owasp-mapping.md](owasp-mapping.md).
+  is still in beta. Add `metadata.owasp_agentic` (`ASI01` to `ASI10`) when an item of
+  the Agentic 2026 list describes the attack. See [owasp-mapping.md](owasp-mapping.md).
 - **Real references.** Include at least the OWASP LLM Top 10 link plus a
   category-specific source where one exists (for indirect injection, the
   Greshake et al. paper: https://arxiv.org/abs/2302.12173).

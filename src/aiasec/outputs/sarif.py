@@ -83,15 +83,21 @@ def _deduplicate_findings(findings: Sequence[Finding]) -> list[Finding]:
     return unique
 
 
+def _owasp_tags(finding: Finding) -> dict[str, str]:
+    tags = {
+        "owasp_llm": finding.owasp_llm,
+        "owasp_mcp": finding.owasp_mcp,
+        "owasp_agentic": finding.owasp_agentic,
+    }
+    return {key: value for key, value in tags.items() if value}
+
+
 def _rule(finding: Finding) -> dict[str, Any]:
     properties: dict[str, str] = {
         "category": finding.category,
         "severity": finding.severity,
+        **_owasp_tags(finding),
     }
-    if finding.owasp_llm:
-        properties["owasp_llm"] = finding.owasp_llm
-    if finding.owasp_mcp:
-        properties["owasp_mcp"] = finding.owasp_mcp
 
     return {
         "id": finding.probe_id,
@@ -106,11 +112,8 @@ def _result(finding: Finding) -> dict[str, Any]:
         "category": finding.category,
         "expectation": finding.expectation,
         "severity": finding.severity,
+        **_owasp_tags(finding),
     }
-    if finding.owasp_llm:
-        properties["owasp_llm"] = finding.owasp_llm
-    if finding.owasp_mcp:
-        properties["owasp_mcp"] = finding.owasp_mcp
 
     # GitHub code scanning only displays results that carry a location, so every result
     # points at the probe file that defines the failed expectation.
