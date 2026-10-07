@@ -13,7 +13,7 @@ from pydantic import ValidationError
 
 from aiasec import __version__
 from aiasec.core.evaluator.rules import TargetObservation
-from aiasec.core.gate import GateThresholds, gate_report
+from aiasec.core.gate import SEVERITY_ORDER, GateThresholds, gate_report
 from aiasec.core.probe import Probe, load_probes_from_dir
 from aiasec.core.runner import run_probes, run_probes_against
 from aiasec.core.verdict import ProbeRunResult
@@ -40,6 +40,29 @@ class OutputFormat(StrEnum):
     auto = "auto"
     markdown = "markdown"
     sarif = "sarif"
+
+
+class MinSeverity(StrEnum):
+    """Lowest probe severity to select."""
+
+    low = "low"
+    medium = "medium"
+    high = "high"
+    critical = "critical"
+
+
+CategoryOption = Annotated[
+    str | None,
+    typer.Option("--category", help="Only probes in these categories (comma-separated)."),
+]
+MinSeverityOption = Annotated[
+    MinSeverity | None,
+    typer.Option("--min-severity", help="Only probes at or above this severity."),
+]
+ProbeIdOption = Annotated[
+    str | None,
+    typer.Option("--probe-id", help="Only these probe ids (comma-separated)."),
+]
 
 
 app = typer.Typer(help="AI agent and MCP security regression testbed.")
@@ -82,6 +105,70 @@ def _load_probes(probes_dir: Path | None) -> list[Probe]:
     except (OSError, ValueError, yaml.YAMLError) as exc:
         typer.echo(f"Failed to load probes: {exc}", err=True)
         raise typer.Exit(code=2) from exc
+
+
+def _split(value: str | None) -> list[str]:
+    return sorted({item.strip() for item in (value or "").split(",") if item.strip()})
+
+
+def _select_probes(
+    probes: list[Probe],
+    category: str | None,
+    min_severity: MinSeverity | None,
+    probe_id: str | None,
+) -> tuple[list[Probe], dict[str, object] | None]:
+    """Apply the selection filters, refusing names that match no loaded probe.
+
+    A typo must not quietly run a different subset, and an empty subset must not produce
+    a clean report. Returns the probes and the selection to record in the report, or None
+    when no filter was given.
+    """
+
+    # A blank name (an unset variable, a stray comma) means neither "no filter" nor "one name
+    # fewer": either reading would run something other than what was asked for.
+    options = (("--category", category), ("--probe-id", probe_id))
+    blank = [
+        option
+        for option, given in options
+        if given is not None and any(not part.strip() for part in given.split(","))
+    ]
+    if blank:
+        typer.echo(f"{' and '.join(blank)} has an empty name; nothing was run.", err=True)
+        raise typer.Exit(code=2)
+    categories, probe_ids = _split(category), _split(probe_id)
+    known_categories, known_ids = {p.category for p in probes}, {p.id for p in probes}
+    unknown = [f"category {name}" for name in categories if name not in known_categories]
+    unknown += [f"probe id {name}" for name in probe_ids if name not in known_ids]
+    if unknown:
+        typer.echo(f"Unknown {', '.join(unknown)}; nothing was run.", err=True)
+        raise typer.Exit(code=2)
+
+    selection: dict[str, object] = {}
+    if categories:
+        selection["categories"] = categories
+    if min_severity is not None:
+        selection["minSeverity"] = min_severity.value
+    if probe_ids:
+        selection["probeIds"] = probe_ids
+    if not selection:
+        return probes, None
+
+    # SEVERITY_ORDER runs from critical down, so a lower index is more severe.
+    ceiling = SEVERITY_ORDER.index(min_severity.value) if min_severity is not None else None
+    selected = [
+        probe
+        for probe in probes
+        if (not categories or probe.category in categories)
+        and (not probe_ids or probe.id in probe_ids)
+        and (ceiling is None or SEVERITY_ORDER.index(probe.severity) <= ceiling)
+    ]
+    if not selected:
+        typer.echo(
+            "No probe matches the selection; refusing to write a report that tested nothing.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    return selected, selection
 
 
 def _read_response(response: str | None, response_file: Path | None) -> str:
@@ -234,6 +321,9 @@ def run(
             help="Allow aiasec to start the --target process or send probes to its URL.",
         ),
     ] = False,
+    category: CategoryOption = None,
+    min_severity: MinSeverityOption = None,
+    probe_id: ProbeIdOption = None,
 ) -> None:
     """Run probes against a live MCP target or a supplied observation."""
 
@@ -253,6 +343,7 @@ def run(
             err=True,
         )
         raise typer.Exit(code=2)
+    probes, selection = _select_probes(probes, category, min_severity, probe_id)
 
     if target is not None:
         results, observation_mode = _run_against_target(probes, target, execute=execute)
@@ -266,9 +357,9 @@ def run(
     rendered_format = _resolve_format(output, output_format)
 
     if rendered_format is OutputFormat.sarif:
-        report = render_sarif_json(results, observation_mode=observation_mode)
+        report = render_sarif_json(results, observation_mode=observation_mode, selection=selection)
     else:
-        report = render_markdown(results, observation_mode=observation_mode)
+        report = render_markdown(results, observation_mode=observation_mode, selection=selection)
 
     try:
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -346,10 +437,14 @@ def list_probes(
         Path | None,
         typer.Option("--probes", help="Directory with probe YAML files."),
     ] = None,
+    category: CategoryOption = None,
+    min_severity: MinSeverityOption = None,
+    probe_id: ProbeIdOption = None,
 ) -> None:
     """List available probe identifiers."""
 
-    for probe in _load_probes(probes_dir):
+    probes, _ = _select_probes(_load_probes(probes_dir), category, min_severity, probe_id)
+    for probe in probes:
         typer.echo(f"{probe.id}\t{probe.severity}\t{probe.category}\t{probe.title}")
 
 

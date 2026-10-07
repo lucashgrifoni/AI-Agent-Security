@@ -28,9 +28,9 @@ aiasec probes list --probes ./my-probes/
 
 ```yaml
 schema: "aiasec.probe/v1"        # required, must be exactly this value
-id: my-category-001              # required, unique, non-empty
+id: my-category-001              # required, unique, non-empty, no comma or edge spaces
 title: "Human readable title"    # required, non-empty
-category: my-category            # required, non-empty
+category: my-category            # required, non-empty, no comma or edge spaces
 severity: high                   # required: low | medium | high | critical
 references:                      # optional but expected: at least one URL
   - https://owasp.org/www-project-top-10-for-large-language-model-applications/
