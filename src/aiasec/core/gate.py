@@ -10,6 +10,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from aiasec.core.probe import Severity
+from aiasec.core.selection import describe_selection
 
 SEVERITY_ORDER: tuple[Severity, ...] = ("critical", "high", "medium", "low")
 
@@ -39,6 +40,10 @@ class GateThresholds(BaseModel):
         return limit
 
 
+class PartialReportError(ValueError):
+    """The report covers a selection of the suite and the caller did not allow that."""
+
+
 class GateViolation(BaseModel):
     """One severity budget that the report exceeded."""
 
@@ -57,6 +62,8 @@ class GateDecision(BaseModel):
     counts: dict[str, int] = Field(default_factory=dict)
     violations: list[GateViolation] = Field(default_factory=list)
     probes_executed: int = 0
+    # Filters each run of the report applied; empty for a run of the whole suite.
+    selections: list[dict[str, Any]] = Field(default_factory=list)
 
     @property
     def total(self) -> int:
@@ -131,13 +138,64 @@ def count_executed_probes(document: Any) -> int:
     return total
 
 
-def gate_report(path: Path, thresholds: GateThresholds) -> GateDecision:
-    """Load a SARIF report and return its release verdict."""
+def read_selections(document: Any) -> list[dict[str, Any]]:
+    """Return the probe selection each run recorded, skipping runs of the whole suite.
+
+    A selection that is present but does not have the shape `aiasec run` writes fails
+    closed: it cannot be told apart from a subset, nor described.
+    """
+
+    selections = []
+    for run in _iter_runs(document):
+        properties = run.get("properties")
+        aiasec = properties.get("aiasec") if isinstance(properties, dict) else None
+        selection = aiasec.get("selection") if isinstance(aiasec, dict) else None
+        if selection is None or selection == {}:
+            continue
+        if not _is_selection(selection):
+            raise ValueError("SARIF run records a probe selection aiasec cannot read")
+        selections.append(selection)
+    return selections
+
+
+def _is_selection(value: Any) -> bool:
+    """Whether value has the shape `aiasec run` records: known filters, well typed."""
+
+    def names(item: Any) -> bool:
+        return isinstance(item, list) and bool(item) and all(
+            isinstance(name, str) and name.strip() for name in item
+        )
+
+    checks = {
+        "categories": names,
+        "probeIds": names,
+        "minSeverity": lambda item: item in SEVERITY_ORDER,
+    }
+    return isinstance(value, dict) and all(
+        key in checks and checks[key](item) for key, item in value.items()
+    )
+
+
+def gate_report(
+    path: Path, thresholds: GateThresholds, *, allow_partial: bool = False
+) -> GateDecision:
+    """Load a SARIF report and return its release verdict.
+
+    A report of a probe subset raises PartialReportError unless allow_partial is set:
+    thresholds met by part of the suite say nothing about the rest.
+    """
 
     document = load_sarif(path)
     executed = count_executed_probes(document)
+    selections = read_selections(document)
+    if selections and not allow_partial:
+        described = "; ".join(describe_selection(selection) for selection in selections)
+        raise PartialReportError(
+            f"report covers only part of the suite ({described}); gate the full suite, "
+            "or pass --allow-partial to gate this subset on purpose"
+        )
     decision = evaluate_gate(count_severities(document), thresholds)
-    return decision.model_copy(update={"probes_executed": executed})
+    return decision.model_copy(update={"probes_executed": executed, "selections": selections})
 
 
 def _iter_runs(document: Any) -> Iterator[dict[str, Any]]:
