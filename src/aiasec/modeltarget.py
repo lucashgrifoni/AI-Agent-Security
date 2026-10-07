@@ -284,9 +284,9 @@ def build_transcript(
             system.append(content)
         elif role in ("user", "assistant"):
             text = "\n\n".join(filter(None, [content, _documents_text(documents)]))
-            # An earlier empty reply (a refusal the API signalled) has nothing to replay,
-            # and providers reject an empty message.
-            if text or role == "user":
+            # An earlier blank reply (a refusal the API signalled, or text beside tool
+            # calls) has nothing to replay, and providers reject a blank message.
+            if text.strip() or role == "user":
                 entries.append({"kind": role, "text": text})
             if role == "assistant":
                 calls = (earlier_calls or {}).get(index, [])
@@ -404,25 +404,29 @@ def _reason(payload: bytes, secret: str | None) -> str:
 def _observed(text: Any, calls: list[ToolCall], *, refused: bool) -> tuple[str, list[ToolCall]]:
     """Check what a reply carried before it is scored.
 
-    The text must be a string, and a reply with no text and no tool call is a contract
-    error, not a pass: it would pass every pattern check without the model having
-    answered. Only a refusal the API itself signals counts as an empty answer.
+    The text must be a string, and a reply with only blank text and no tool call is a
+    contract error, not a pass: it would pass every pattern check without the model
+    having answered. Only a refusal the API itself signals counts as an empty answer.
     """
 
     if text is None:
         text = ""
     if not isinstance(text, str):
         raise ValueError("the reply text is not a string")
-    if not text and not calls and not refused:
+    if not text.strip() and not calls and not refused:
         raise ValueError("the reply has no text and no tool call")
     return text, calls
 
 
-def _call(name: Any, arguments: Any) -> ToolCall:
-    """A tool call the model asked for; a blank name would match no check."""
+def _call(name: Any, arguments: Any, provider: str) -> ToolCall:
+    """A tool call the model asked for, under a name the provider's API accepts.
 
-    if not isinstance(name, str) or not name.strip():
-        raise ValueError("a tool call has no name")
+    Any other name (blank, padded, too long) was never declared, and it would slip past a
+    check for the tool the model meant.
+    """
+
+    if not isinstance(name, str) or not _fits(name, provider):
+        raise ValueError("a tool call has a name the API does not accept")
     return ToolCall(name=name, arguments=arguments)
 
 
@@ -503,7 +507,7 @@ def _anthropic_reply(reply: dict[str, Any]) -> tuple[str, list[ToolCall], Cut]:
         if block["type"] == "text":
             texts.append(block["text"])
         elif block["type"] == "tool_use":
-            calls.append(_call(block["name"], block["input"]))
+            calls.append(_call(block["name"], block["input"], "anthropic"))
     text, calls = _observed(
         "\n".join(texts), calls, refused=reply.get("stop_reason") == "refusal"
     )
@@ -577,7 +581,7 @@ def _openai_reply(reply: dict[str, Any]) -> tuple[str, list[ToolCall], Cut]:
             raise ValueError("unsupported tool call type")
         function = call["function"]
         # The arguments are a JSON string, possibly invalid; the evaluator handles both.
-        calls.append(_call(function["name"], function["arguments"]))
+        calls.append(_call(function["name"], function["arguments"], "openai"))
     # A refusal arrives as message.refusal, with no content; it is the model's reply.
     refusal = message.get("refusal")
     text = refusal if isinstance(refusal, str) and refusal else message.get("content")
@@ -605,7 +609,7 @@ def _ollama_body(transcript: Transcript, config: ModelTargetConfig) -> dict[str,
 def _ollama_reply(reply: dict[str, Any]) -> tuple[str, list[ToolCall], Cut]:
     message = reply["message"]
     calls = [
-        _call(call["function"]["name"], call["function"].get("arguments"))
+        _call(call["function"]["name"], call["function"].get("arguments"), "ollama")
         for call in message.get("tool_calls") or []
     ]
     # A non-streamed reply always says done; anything else is a part of a reply.

@@ -122,6 +122,29 @@ class Fake:
                     {"function": {"name": "fetch_url", "arguments": {}}},
                 ]}, "done": True},
             }[self.provider]  # fmt: skip
+        if self.behavior == "whitespace":
+            return 200, {
+                "anthropic": {"content": [{"type": "text", "text": " \n "}],
+                              "stop_reason": "end_turn"},
+                "openai": {"choices": [{"message": {"content": "  \n"},
+                                        "finish_reason": "stop"}]},
+                "ollama": {"message": {"content": "\n\t"}, "done": True},
+            }[self.provider]  # fmt: skip
+        if self.behavior.startswith("tool-name:"):
+            # A reply with text and one call under this name, as a server might send it.
+            name = self.behavior.removeprefix("tool-name:")
+            return 200, {
+                "anthropic": {"content": [{"type": "text", "text": "ok"},
+                                          {"type": "tool_use", "id": "t", "name": name,
+                                           "input": {}}],
+                              "stop_reason": "tool_use"},
+                "openai": {"choices": [{"message": {"content": "ok", "tool_calls": [
+                    {"id": "c", "type": "function",
+                     "function": {"name": name, "arguments": "{}"}}]},
+                    "finish_reason": "tool_calls"}]},
+                "ollama": {"message": {"content": "ok", "tool_calls": [
+                    {"function": {"name": name, "arguments": {}}}]}, "done": True},
+            }[self.provider]  # fmt: skip
         if self.behavior.startswith("stop:"):
             # A whole-looking reply with this stop reason; "absent" leaves the field out.
             reason = self.behavior.removeprefix("stop:")
@@ -611,6 +634,49 @@ def test_a_complete_stop_reason_is_scored(serve, monkeypatch, provider: str, rea
     observation = _observe(provider, serve(fake), _probe("direct-injection-001"), monkeypatch)
 
     assert observation.assistant_final_response == "Hello."
+
+
+@pytest.mark.parametrize("provider", ["anthropic", "openai", "ollama"])
+def test_a_whitespace_only_reply_fails(serve, monkeypatch, provider: str) -> None:
+    # Blank text passes every pattern check without the model having answered.
+    fake = Fake(provider, "whitespace")
+
+    with pytest.raises(ModelTargetError, match="could not be read"):
+        _observe(provider, serve(fake), _probe("direct-injection-001"), monkeypatch)
+
+
+@pytest.mark.parametrize(("provider", "name"), [
+    ("anthropic", "send_email "), ("anthropic", "x" * 129),
+    ("openai", "send_email "), ("openai", "x" * 65),
+    ("ollama", "functions.send_email"),
+])  # fmt: skip
+def test_a_tool_call_name_the_api_would_reject_fails(
+    serve, monkeypatch, provider: str, name: str
+) -> None:
+    # Such a name was never declared, and it would slip past a check for the tool meant.
+    fake = Fake(provider, f"tool-name:{name}")
+
+    with pytest.raises(ModelTargetError, match="could not be read"):
+        _observe(provider, serve(fake), _probe("direct-injection-001"), monkeypatch)
+
+
+def test_a_long_tool_call_name_anthropic_accepts_is_recorded(serve, monkeypatch) -> None:
+    fake = Fake("anthropic", "tool-name:" + "x" * 100)
+
+    observation = _observe("anthropic", serve(fake), _probe("direct-injection-001"), monkeypatch)
+
+    assert [call.name for call in observation.tool_calls] == ["x" * 100]
+
+
+def test_a_blank_earlier_reply_is_not_replayed_as_text() -> None:
+    config = ModelTargetConfig.model_validate({"transport": "anthropic", "model": "m"})
+    inputs = [{"role": "user", "content": "First."},
+              {"role": "assistant", "content": " \n "},
+              {"role": "user", "content": "Second."}]  # fmt: skip
+
+    entries = build_transcript(inputs, config).entries
+
+    assert [entry["kind"] for entry in entries] == ["user", "user"]
 
 
 def test_a_repeated_configured_tool_name_is_a_config_error() -> None:

@@ -201,9 +201,10 @@ point the target config at the model's API. aiasec supports three:
 | `timeoutSeconds` | `60` | deadline for each request, as for HTTP targets (1 to 600) |
 
 For each probe turn aiasec sends the conversation so far as one request. The model's
-text is the reply. A reply that is malformed, empty without a refusal, cut at `maxTokens`
-or the context window, or not marked complete by its stop reason (`stop_reason`,
-`finish_reason`, or Ollama's `done`) fails the run instead of being scored. **The tool calls it asks for are recorded with their arguments and
+text is the reply. A reply that is malformed, blank (empty or only whitespace) without a
+refusal, cut at `maxTokens` or the context window, not marked complete by its stop
+reason (`stop_reason`, `finish_reason`, or Ollama's `done`), or that calls a tool by a
+name the API does not accept fails the run instead of being scored. **The tool calls it asks for are recorded with their arguments and
 never executed**: the turn ends there, so a model that would call `send_email` fails
 the probe without anything being sent. On the next turn of a multi-turn probe, those
 calls are replayed in the reply that made them, all in one assistant message as the API
