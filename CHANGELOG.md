@@ -27,9 +27,6 @@ All notable changes to this project will be documented in this file.
   and point a target config at it. An unconnected template makes `aiasec run` exit 2
   rather than pass. The reference targets now run on these templates, with their two
   agents in `examples/reference_agents.py` instead of three copies.
-
-## Unreleased
-
 - Five new probes (22 in total): `issue-comment-injection-001` and
   `email-injection-001` (instructions in an issue body or an email the agent reads),
   `malformed-json-injection-001` (a forged record after a truncated JSON tool result),

@@ -124,3 +124,24 @@ def test_an_unconnected_http_template_fails_the_run(tmp_path: Path, http_templat
     assert result.exit_code == 2, result.output
     assert "HTTP 500" in result.output
     assert not output.exists()
+
+
+def test_the_readme_example_keeps_system_inputs_in_order() -> None:
+    received: list[object] = []
+
+    class FakeAgent:
+        def run(self, messages: list[dict[str, str]], **_: object) -> tuple[str, list[object]]:
+            received.extend(message["content"] for message in messages)
+            return "ok", []
+
+    namespace: dict[str, object] = {"my_agent": FakeAgent()}
+    exec(_readme_example(), namespace)  # noqa: S102 - this repository's own example
+    inputs = [
+        {"role": "system", "content": "first"},
+        {"role": "user", "content": "hello"},
+        {"role": "system", "content": "second"},
+    ]
+
+    namespace["run_agent"](inputs)  # type: ignore[operator]
+
+    assert received == ["first", "second", "hello"]
