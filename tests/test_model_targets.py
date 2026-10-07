@@ -122,6 +122,14 @@ class Fake:
                     {"function": {"name": "fetch_url", "arguments": {}}},
                 ]}, "done": True},
             }[self.provider]  # fmt: skip
+        if self.behavior.startswith("tool-use-id:"):
+            # A tool_use block whose id is missing, blank or not a string.
+            block = {"type": "tool_use", "name": "send_email", "input": {}}
+            raw = self.behavior.removeprefix("tool-use-id:")
+            if raw != "absent":
+                block["id"] = json.loads(raw)
+            return 200, {"content": [{"type": "text", "text": "ok"}, block],
+                         "stop_reason": "tool_use"}  # fmt: skip
         if self.behavior == "no-prefill" and body["messages"][-1]["role"] == "assistant":
             # What Claude Sonnet 4.6 and later Sonnet models answer to a prefill.
             return 400, {"type": "error", "error": {
@@ -821,6 +829,16 @@ def test_a_rejected_prefill_names_the_probe_turn(serve, monkeypatch) -> None:
 
     assert "does not support assistant message prefill" in str(raised.value)
     assert "ends with an assistant input" in str(raised.value)
+
+
+@pytest.mark.parametrize("raw_id", ["absent", '""', "7", "null"])
+def test_an_anthropic_tool_call_without_an_id_fails(serve, monkeypatch, raw_id: str) -> None:
+    # The id goes back with the call's result on later turns; without one the reply is
+    # unreadable, on the first turn, not a crash on the next.
+    fake = Fake("anthropic", f"tool-use-id:{raw_id}")
+
+    with pytest.raises(ModelTargetError, match="could not be read"):
+        _observe("anthropic", serve(fake), _probe("direct-injection-001"), monkeypatch)
 
 
 def test_a_repeated_configured_tool_name_is_a_config_error() -> None:

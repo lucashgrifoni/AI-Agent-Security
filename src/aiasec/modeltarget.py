@@ -562,6 +562,9 @@ def _anthropic_reply(reply: dict[str, Any]) -> tuple[str, list[ToolCall], Cut]:
         if block["type"] == "text":
             texts.append(block["text"])
         elif block["type"] == "tool_use":
+            # The id goes back with the call's result on later turns.
+            if not isinstance(block.get("id"), str) or not block["id"].strip():
+                raise ValueError("a tool call has no id")
             calls.append(_call(block["name"], block["input"], "anthropic"))
     if reply.get("stop_reason") == "tool_use" and not calls:
         raise ValueError("the reply stopped for a tool call but carries none")
