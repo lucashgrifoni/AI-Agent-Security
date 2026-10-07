@@ -141,8 +141,8 @@ def count_executed_probes(document: Any) -> int:
 def read_selections(document: Any) -> list[dict[str, Any]]:
     """Return the probe selection each run recorded, skipping runs of the whole suite.
 
-    A selection that is present but not an object fails closed: it cannot be told
-    apart from a subset.
+    A selection that is present but does not have the shape `aiasec run` writes fails
+    closed: it cannot be told apart from a subset, nor described.
     """
 
     selections = []
@@ -152,10 +152,28 @@ def read_selections(document: Any) -> list[dict[str, Any]]:
         selection = aiasec.get("selection") if isinstance(aiasec, dict) else None
         if selection is None or selection == {}:
             continue
-        if not isinstance(selection, dict):
+        if not _is_selection(selection):
             raise ValueError("SARIF run records a probe selection aiasec cannot read")
         selections.append(selection)
     return selections
+
+
+def _is_selection(value: Any) -> bool:
+    """Whether value has the shape `aiasec run` records: known filters, well typed."""
+
+    def names(item: Any) -> bool:
+        return isinstance(item, list) and bool(item) and all(
+            isinstance(name, str) and name.strip() for name in item
+        )
+
+    checks = {
+        "categories": names,
+        "probeIds": names,
+        "minSeverity": lambda item: item in SEVERITY_ORDER,
+    }
+    return isinstance(value, dict) and all(
+        key in checks and checks[key](item) for key, item in value.items()
+    )
 
 
 def gate_report(

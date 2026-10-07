@@ -99,7 +99,23 @@ def test_a_full_report_needs_no_flag_and_shows_no_selection(tmp_path: Path) -> N
     assert "selections" not in json.loads(result.stdout)
 
 
-@pytest.mark.parametrize("selection", ["jailbreak", ["jailbreak"], 7, True])
+@pytest.mark.parametrize(
+    "selection",
+    [
+        "jailbreak",
+        ["jailbreak"],
+        7,
+        True,
+        {"unknown": True},
+        {"categories": "jailbreak"},
+        {"categories": []},
+        {"categories": [1]},
+        {"probeIds": [""]},
+        {"minSeverity": "extreme"},
+        {"minSeverity": ["high"]},
+        {"categories": ["jailbreak"], "extra": 1},
+    ],
+)
 def test_an_unreadable_selection_fails_closed(tmp_path: Path, selection: object) -> None:
     report = _write(tmp_path, selection)
 
