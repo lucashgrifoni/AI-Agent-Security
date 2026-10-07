@@ -16,9 +16,11 @@ JsonObject = dict[str, Any]
 
 # A target controls what it sends. These bounds keep a flooding or endless peer from
 # exhausting memory: the reader thread stops pulling from the pipe once this many
-# messages wait unread, and a single message may not exceed this many characters.
-MAX_QUEUED_MESSAGES = 64
-MAX_MESSAGE_CHARS = 4 * 1024 * 1024
+# messages wait unread, and a single message may not exceed this many characters, the
+# same 1 MiB an HTTP reply gets. Their product, 16 Mi characters, is the most a target
+# can make aiasec hold.
+MAX_QUEUED_MESSAGES = 16
+MAX_MESSAGE_CHARS = 1024 * 1024
 
 
 class McpTransportError(RuntimeError):

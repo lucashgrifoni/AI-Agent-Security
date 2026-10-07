@@ -202,6 +202,14 @@ def test_a_flooding_peer_cannot_fill_memory() -> None:
     assert transport._lines.qsize() <= 1024
 
 
+def test_queued_messages_have_a_small_total_budget() -> None:
+    from aiasec.mcp import transport
+
+    # Count and size bound each other: the worst case a target can make aiasec hold is
+    # their product, and it must stay far below a CI runner's memory.
+    assert transport.MAX_QUEUED_MESSAGES * transport.MAX_MESSAGE_CHARS <= 16 * 1024 * 1024
+
+
 class Endless(io.StringIO):
     """A single message that never ends."""
 
