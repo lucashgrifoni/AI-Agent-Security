@@ -22,6 +22,13 @@ All notable changes to this project will be documented in this file.
 - An invalid target config, or `mcp tools list --config`, lists each invalid field
   with its reason on its own line. The message no longer carries pydantic's
   documentation links or the rejected value, which could be a header or env secret.
+- **Behavior change:** `aiasec gate` refuses a report produced with `--category`,
+  `--min-severity` or `--probe-id` (exit 2), because thresholds met by part of the
+  suite say nothing about the rest. Pass `--allow-partial` to gate a subset on
+  purpose; the gate's JSON then lists the filters under `selections`. A report whose
+  recorded selection cannot be read fails closed.
+- The composite action takes `categories`, `min-severity` and `probe-ids` inputs. When
+  one is set, the action passes `--allow-partial` to the gate.
 
 ## 0.2.0 - 2026-10-07
 

@@ -139,11 +139,13 @@ def test_probes_list_applies_the_same_filters() -> None:
     assert lines and all("\tjailbreak\t" in line for line in lines)
 
 
-def test_the_gate_reads_a_filtered_report_unchanged(tmp_path) -> None:
+def test_the_gate_reads_a_filtered_report_when_allowed(tmp_path) -> None:
     report = tmp_path / "report.sarif"
     _run("run", "--response", "fine", "--output", str(report), "--probe-id", "crescendo-001")
 
-    result = _run("gate", "--report", str(report), "--max-high", "0", "--exit-on-fail")
+    result = _run(
+        "gate", "--report", str(report), "--max-high", "0", "--exit-on-fail", "--allow-partial"
+    )
 
     assert result.exit_code == 0
     assert json.loads(result.stdout)["probesExecuted"] == 1
