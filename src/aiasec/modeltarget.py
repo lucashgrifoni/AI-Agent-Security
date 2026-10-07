@@ -27,6 +27,7 @@ import ipaddress
 import json
 import os
 import re
+from collections.abc import Container
 from types import TracebackType
 from typing import Any, Literal
 from urllib.parse import urlsplit
@@ -217,6 +218,8 @@ class ModelAgentTarget:
             raise ModelTargetError(f"The {provider} API reply could not be read") from exc
         # The part past a cut could hold what a probe looks for; scoring the rest would
         # pass a probe on half an answer.
+        if cut == "unfinished":
+            raise ModelTargetError(f"The {provider} reply is not finished (done is not true)")
         if cut == "context":
             raise ModelTargetError(
                 f"The {provider} reply was cut because the conversation filled the model's "
@@ -263,7 +266,6 @@ def build_transcript(
 
     system = [config.system] if config.system else []
     tools = {tool.name: tool for tool in config.tools}
-    catalog: set[str] = set()
     entries: list[dict[str, Any]] = []
     for index, item in enumerate(inputs):
         role = item.get("role")
@@ -300,10 +302,10 @@ def build_transcript(
             entries.append({"kind": "result", "id": call_id, "name": name, "text": text})
         elif role == "tool_catalog":
             for document in documents:
-                # Each document stays its own tool, so no description is lost.
+                # Each document becomes its own tool and replaces no tool already
+                # declared, so the configured tools reach the model as they are.
                 segment = _last_path_segment(document.get("path") or "", config.transport)
-                name = _unused(segment, catalog, config.transport)
-                catalog.add(name)
+                name = _unused(segment, tools, config.transport)
                 description = " ".join(
                     filter(None, [document.get("content"), document.get("injected")])
                 )
@@ -352,7 +354,7 @@ def _last_path_segment(path: str, provider: str) -> str:
     return segment if _fits(segment, provider) else DEFAULT_TOOL
 
 
-def _unused(name: str, taken: set[str], provider: str) -> str:
+def _unused(name: str, taken: Container[str], provider: str) -> str:
     """The name, or the name with the first free _2, _3... suffix within the limit."""
 
     candidate, number = name, 1
@@ -558,7 +560,11 @@ def _ollama_reply(reply: dict[str, Any]) -> tuple[str, list[ToolCall], Cut]:
         _call(call["function"]["name"], call["function"].get("arguments"))
         for call in message.get("tool_calls") or []
     ]
-    cut = "length" if reply.get("done_reason") == "length" else None
+    # A non-streamed reply always says done; anything else is a part of a reply.
+    if reply.get("done") is not True:
+        cut = "unfinished"
+    else:
+        cut = "length" if reply.get("done_reason") == "length" else None
     return *_observed(message.get("content"), calls, refused=False), cut
 
 
