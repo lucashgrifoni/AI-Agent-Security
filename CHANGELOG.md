@@ -12,6 +12,10 @@ All notable changes to this project will be documented in this file.
   `--exit-on-regression` exits 1 on a regression, and on lost coverage unless
   `--allow-partial`. SARIF run properties now list `executedProbes` and
   `executedExpectations`, and each result carries its `expectationId`.
+- `aiasec run --output report.html` (or `--format html`) writes a standalone HTML
+  report: summary, severity counts, findings, and every probe with its result. The
+  page has no script and loads nothing (a Content Security Policy forbids both), and
+  every value taken from a probe file or a selection is escaped.
 - An HTTP target header that takes its value from an environment variable holding a
   line break now fails before any request, naming the variable. It used to fail
   inside `http.client` with an error that quoted the value, usually a credential, into

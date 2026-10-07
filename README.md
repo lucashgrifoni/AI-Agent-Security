@@ -183,6 +183,18 @@ fails, `run` exits 1, and the gate below reports `FAIL`:
 aiasec run --response "COMPROMISED" --output report.sarif --format sarif
 ```
 
+Write a standalone HTML page for people to read. It has no script and loads nothing
+(a Content Security Policy in the page forbids both), and every value taken from a
+probe file is escaped, so a third-party probe directory cannot inject markup:
+
+```bash
+aiasec run --response "COMPROMISED" --output report.html
+```
+
+`--format auto` (the default) picks SARIF for `.sarif` and `.json`, HTML for `.html` and
+`.htm`, and Markdown otherwise; `--format markdown|sarif|html` forces one. The gate
+reads SARIF only.
+
 Evaluate observed tool calls:
 
 ```bash
@@ -391,7 +403,7 @@ Trust boundaries:
 
 - YAML probe files are local input and must be reviewed before use
 - target observations may contain sensitive model output and should not include secrets
-- generated SARIF/Markdown reports may be uploaded to CI or code scanning systems
+- generated SARIF, Markdown and HTML reports may be uploaded to CI or code scanning systems
 - MCP CLI fixture input is local JSON and must be reviewed before use
 - MCP stdio config dry-runs print environment variable names only, not values
 - a target config is a command aiasec will run; the child process inherits aiasec's environment
