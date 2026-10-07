@@ -25,7 +25,9 @@ tags; `testpypi` only deploys from `master`.
 3. Tag the merge commit with a signed tag and push it:
    `git tag -s vX.Y.Z -m "aiasec X.Y.Z"` then `git push origin vX.Y.Z`.
 4. Publish the GitHub Release for the tag with the release notes.
-5. The `Publish` workflow then builds the wheel and sdist, attests their provenance,
+5. The `Publish` workflow then builds the wheel and sdist, stops if the tag,
+   `pyproject.toml`, `__version__` and the built metadata do not name one version,
+   attests their provenance,
    attaches the wheel, sdist, CycloneDX SBOM (`aiasec.cdx.json`) and provenance bundle
    (`aiasec.intoto.jsonl`) to the release, and, once approved in the `pypi`
    environment, publishes to PyPI.

@@ -84,6 +84,39 @@ jobs:
           assert expected and shipped == expected, f"wheel probes {shipped} != source probes {expected}"
           PY
 
+      - name: The release tag and every version string agree
+        # Nothing is attested, attached or published when a manual version bump was
+        # missed: the tag, pyproject.toml, aiasec.__version__ and the built metadata must
+        # all name one version. workflow_dispatch runs have no tag and check the rest.
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          python - <<'PY'
+          import os, pathlib, re, tarfile, tomllib, zipfile
+          def version_field(text):
+              return re.search(r"^Version: (.+)$", text, re.M).group(1).strip()
+          wheel = next(pathlib.Path("dist").glob("*.whl"))
+          sdist = next(pathlib.Path("dist").glob("*.tar.gz"))
+          with zipfile.ZipFile(wheel) as archive:
+              name = next(n for n in archive.namelist() if n.endswith(".dist-info/METADATA"))
+              wheel_version = version_field(archive.read(name).decode("utf-8"))
+          with tarfile.open(sdist) as archive:
+              member = next(m for m in archive.getmembers() if m.name.count("/") == 1 and m.name.endswith("/PKG-INFO"))
+              sdist_version = version_field(archive.extractfile(member).read().decode("utf-8"))
+          init = pathlib.Path("src/aiasec/__init__.py").read_text(encoding="utf-8")
+          versions = {
+              "pyproject.toml": tomllib.loads(pathlib.Path("pyproject.toml").read_text(encoding="utf-8"))["project"]["version"],
+              "aiasec.__version__": re.search(r'^__version__ = "([^"]+)"', init, re.M).group(1),
+              "wheel metadata": wheel_version,
+              "sdist metadata": sdist_version,
+          }
+          tag = os.environ.get("RELEASE_TAG", "")
+          if tag:
+              versions["release tag"] = tag.removeprefix("v")
+          assert len(set(versions.values())) == 1, f"versions disagree: {versions}"
+          print(f"{wheel_version}: {', '.join(versions)} agree")
+          PY
+
       - name: Attest build provenance
         id: attest
         uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0

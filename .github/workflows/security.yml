@@ -149,7 +149,13 @@ jobs:
 
   sast-snyk-code:
     name: SAST - Snyk Code
-    if: vars.SNYK_ENABLED == 'true'
+    # GitHub withholds repository secrets from fork and Dependabot pull requests, so
+    # those runs skip the job instead of calling Snyk with an empty token.
+    if: >-
+      vars.SNYK_ENABLED == 'true'
+      && github.actor != 'dependabot[bot]'
+      && (github.event_name != 'pull_request'
+          || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
@@ -287,9 +293,12 @@ jobs:
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: block
+          # On a cache miss the action downloads gitleaks from a GitHub release, which
+          # redirects to release-assets.githubusercontent.com.
           allowed-endpoints: >
             api.github.com:443
             github.com:443
+            release-assets.githubusercontent.com:443
 
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
