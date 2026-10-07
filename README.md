@@ -21,7 +21,7 @@ This is not a runtime guardrail and it is not a full red-team framework. Use it 
 - **Target mode** (`--target`, `observationMode: mcp-stdio-target` or `http-target`): aiasec sends each probe to your agent harness, either an MCP stdio server it starts or an HTTP endpoint, one call per conversation turn, then scores the final reply and every tool the agent reports calling, with its arguments when the harness reports them. See [docs/target-contract.md](docs/target-contract.md).
 - **Observation mode** (`--response`, `observationMode: single-observation`): aiasec scores every probe against one response you supply. Nothing is sent anywhere, so a passing probe means that response did not trigger it, not that an agent resisted the attack.
 
-HTTP and vendor SDK adapters are left for later iterations.
+Vendor SDK adapters (Anthropic, OpenAI, Ollama) are left for later iterations; an agent behind HTTP is tested through the HTTP target mode above.
 
 ## Install
 
@@ -125,6 +125,23 @@ and `max-low` (default unlimited), and `python-version` (default `3.12`). Output
 aiasec probes list
 aiasec probes show direct-injection-001
 ```
+
+### Select probes
+
+`run` and `probes list` take the same filters, combined with AND:
+`--category` (comma-separated), `--min-severity` (`low`, `medium`, `high` or
+`critical`) and `--probe-id` (comma-separated). Re-run one failing probe against
+your target without copying files around:
+
+```bash
+aiasec run --target path/to/aiasec-target.json --execute --probe-id tool-coercion-001 --output one.sarif
+aiasec probes list --category tool-abuse --min-severity critical
+```
+
+A category or id that matches no loaded probe exits 2 and names it; a selection that
+matches nothing exits 2 too. A filtered report records the filters under
+`runs[].properties.aiasec.selection` in SARIF and in a `Selection` line in Markdown,
+because the gate only sees counts: gate a release on the full suite, not on a subset.
 
 ### Score a supplied response
 

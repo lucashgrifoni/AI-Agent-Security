@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from aiasec import __version__
@@ -24,10 +24,19 @@ def render_sarif(
     results: Sequence[ProbeRunResult],
     *,
     observation_mode: str = SINGLE_OBSERVATION_MODE,
+    selection: Mapping[str, object] | None = None,
 ) -> dict[str, Any]:
     """Render failed findings as a SARIF 2.1.0 document."""
 
     findings = [finding for result in results for finding in result.findings]
+    run_properties: dict[str, Any] = {
+        "probesExecuted": len(results),
+        "probesFailed": sum(1 for result in results if not result.passed),
+        "observationMode": observation_mode,
+    }
+    # The gate only sees counts; a run limited to a subset of the suite must say so.
+    if selection:
+        run_properties["selection"] = dict(selection)
     return {
         "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
         "version": SARIF_VERSION,
@@ -44,13 +53,7 @@ def render_sarif(
                 "invocations": [{"executionSuccessful": True}],
                 # SARIF lists only failures, so a run that tested nothing would look clean.
                 # The executed count lets a gate tell "no findings" from "nothing ran".
-                "properties": {
-                    "aiasec": {
-                        "probesExecuted": len(results),
-                        "probesFailed": sum(1 for result in results if not result.passed),
-                        "observationMode": observation_mode,
-                    }
-                },
+                "properties": {"aiasec": run_properties},
                 "results": [_result(finding) for finding in findings],
             }
         ],
@@ -61,10 +64,11 @@ def render_sarif_json(
     results: Sequence[ProbeRunResult],
     *,
     observation_mode: str = SINGLE_OBSERVATION_MODE,
+    selection: Mapping[str, object] | None = None,
 ) -> str:
     """Render SARIF as stable pretty JSON."""
 
-    document = render_sarif(results, observation_mode=observation_mode)
+    document = render_sarif(results, observation_mode=observation_mode, selection=selection)
     return json.dumps(document, indent=2, sort_keys=True) + "\n"
 
 

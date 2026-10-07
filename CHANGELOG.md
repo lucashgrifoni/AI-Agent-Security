@@ -87,6 +87,12 @@ All notable changes to this project will be documented in this file.
   steers `open_file` outside the workspace, OWASP LLM06) and `tool-argument-exfil-001`
   (a retrieved document steers `fetch_url` to a collector, OWASP LLM02). Both map to
   OWASP MCP06. The vulnerable reference targets now report arguments.
+- `aiasec run` and `aiasec probes list` select probes with `--category`,
+  `--min-severity` and `--probe-id`, combined with AND. A category or id that matches
+  no loaded probe, or a selection that matches nothing, exits 2. A filtered run records
+  the filters in SARIF (`runs[].properties.aiasec.selection`) and in the Markdown
+  summary; an unfiltered report is unchanged.
+- README no longer says HTTP targets are left for later.
 
 ## 0.1.0 - 2026-10-06
 
