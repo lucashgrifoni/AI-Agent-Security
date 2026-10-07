@@ -59,7 +59,7 @@ class Fake:
             return 200, {
                 "anthropic": {"content": [], "stop_reason": "end_turn"},
                 "openai": {"choices": [{"message": {"content": None}, "finish_reason": "stop"}]},
-                "ollama": {"message": {"role": "assistant", "content": ""}},
+                "ollama": {"message": {"role": "assistant", "content": ""}, "done": True},
             }[self.provider]
         if self.behavior == "cut":
             return 200, {
@@ -67,7 +67,8 @@ class Fake:
                               "stop_reason": "max_tokens"},
                 "openai": {"choices": [{"message": {"content": "Step 1"},
                                         "finish_reason": "length"}]},
-                "ollama": {"message": {"content": "Step 1"}, "done_reason": "length"},
+                "ollama": {"message": {"content": "Step 1"}, "done": True,
+                           "done_reason": "length"},
             }[self.provider]  # fmt: skip
         if self.behavior == "calls-first":
             # A tool call with no text on every turn but the last, as an agent model might.
@@ -97,6 +98,10 @@ class Fake:
         if self.behavior == "context-full":
             return 200, {"content": [{"type": "text", "text": "Step 1"}],
                          "stop_reason": "model_context_window_exceeded"}  # fmt: skip
+        if self.behavior == "ollama-unfinished":
+            return 200, {"message": {"role": "assistant", "content": "Step 1"}, "done": False}
+        if self.behavior == "ollama-no-done":
+            return 200, {"message": {"role": "assistant", "content": "Step 1"}}
         if self.behavior == "openai-refusal-field":
             message = {"role": "assistant", "content": None, "refusal": "I can't help with that."}
             return 200, {"choices": [{"message": message, "finish_reason": "stop"}]}
@@ -104,7 +109,8 @@ class Fake:
             return 200, {
                 "anthropic": {"content": [{"type": "text", "text": {"nested": "x"}}]},
                 "openai": {"choices": [{"message": {"content": [{"type": "text"}]}}]},
-                "ollama": {"message": {"role": "assistant", "content": {"nested": "x"}}},
+                "ollama": {"message": {"role": "assistant", "content": {"nested": "x"}},
+                           "done": True},
             }[self.provider]
         if self.behavior == "blank-tool-name":
             return 200, {
@@ -116,7 +122,7 @@ class Fake:
                 ]}}]},
                 "ollama": {"message": {"content": "ok", "tool_calls": [
                     {"function": {"name": "  ", "arguments": {}}}
-                ]}},
+                ]}, "done": True},
             }[self.provider]  # fmt: skip
         if self.behavior == "refusal":
             return 200, {
@@ -142,7 +148,8 @@ class Fake:
             message = {"role": "assistant", "content": text, "tool_calls": tool_calls or None}
             return 200, {"choices": [{"message": message, "finish_reason": "stop"}]}
         tool_calls = [{"function": {"name": n, "arguments": {"input": text}}} for n in calls]
-        return 200, {"message": {"role": "assistant", "content": text, "tool_calls": tool_calls}}
+        message = {"role": "assistant", "content": text, "tool_calls": tool_calls}
+        return 200, {"message": message, "done": True}
 
 
 def _all_text(value: Any) -> str:
@@ -515,6 +522,33 @@ def test_a_suffixed_catalog_name_stays_within_the_provider_limit() -> None:
     assert names == [name, "z" * 62 + "_2"]
 
 
+def test_a_catalog_tool_never_replaces_a_configured_one() -> None:
+    config = ModelTargetConfig.model_validate(
+        {"transport": "openai", "model": "m",
+         "tools": [{"name": "send_email", "description": "Configured."},
+                   {"name": "send_email_2", "description": "Also configured."}]}
+    )  # fmt: skip
+    inputs = [{"role": "tool_catalog",
+               "documents": [{"path": "mcp://x/send_email", "content": "From the catalog."}]},
+              {"role": "user", "content": "Go on."}]  # fmt: skip
+
+    tools = {tool.name: tool.description for tool in build_transcript(inputs, config).tools}
+
+    assert tools == {
+        "send_email": "Configured.",
+        "send_email_2": "Also configured.",
+        "send_email_3": "From the catalog.",
+    }
+
+
+@pytest.mark.parametrize("behavior", ["ollama-unfinished", "ollama-no-done"])
+def test_an_ollama_reply_that_is_not_done_fails(serve, monkeypatch, behavior: str) -> None:
+    fake = Fake("ollama", behavior)
+
+    with pytest.raises(ModelTargetError, match="not finished"):
+        _observe("ollama", serve(fake), _probe("direct-injection-001"), monkeypatch)
+
+
 def test_an_explicit_null_key_variable_sends_no_key(serve, monkeypatch) -> None:
     fake = Fake("openai", "refuse")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
@@ -568,7 +602,8 @@ def test_no_provider_takes_a_tool_name_over_128_characters() -> None:
 
 
 @pytest.mark.parametrize(("provider", "expected"), [
-    ("anthropic", LONG_NAME), ("openai", "read_document"),
+    ("anthropic", [LONG_NAME, LONG_NAME[:126] + "_2"]),
+    ("openai", ["read_document", "read_document_2"]),
 ])  # fmt: skip
 def test_a_tool_named_by_a_document_path_fits_the_provider(provider: str, expected: str) -> None:
     config = ModelTargetConfig.model_validate({"transport": provider, "model": "m"})
@@ -580,7 +615,7 @@ def test_a_tool_named_by_a_document_path_fits_the_provider(provider: str, expect
 
     transcript = build_transcript(inputs, config)
 
-    assert [tool.name for tool in transcript.tools] == [expected]
+    assert [tool.name for tool in transcript.tools] == expected
 
 
 def test_an_openai_refusal_field_is_the_reply(serve, monkeypatch) -> None:

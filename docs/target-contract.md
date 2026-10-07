@@ -220,9 +220,9 @@ Probe inputs reach the model like this:
   to the model if `tools` does not declare it;
 - `tool_catalog` documents become tool definitions, named after the last segment of
   the document path (`read_document` when the provider rejects that name), with the
-  document text, injected part included, as description. A name an earlier catalog
-  document already took gets a `_2`, `_3`... suffix, so every description reaches the
-  model;
+  document text, injected part included, as description. A name already taken, by a
+  configured tool or an earlier document, gets a `_2`, `_3`... suffix, so every
+  description reaches the model and no configured tool is replaced;
 - any other role fails the run instead of being left out.
 
 A real agent may route these differently (a retrieval step, its own tool loop). This
