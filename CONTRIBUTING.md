@@ -10,6 +10,18 @@ python -m pytest
 python -m ruff check .
 ```
 
+CI installs the same tools from hash-locked files. To reproduce its environment exactly:
+
+```bash
+python -m pip install --require-hashes -r .github/requirements/ci.txt
+python -m pip install --no-deps --no-build-isolation -e .
+```
+
+The `.txt` files in `.github/requirements` are generated from the `.in` files next to
+them; the first lines of each `.txt` record the `uv pip compile` command. When you add a
+dependency to `pyproject.toml`, add it to `action.in` (runtime) or `ci.in` (dev) and
+regenerate; `tests/test_ci_requirements.py` fails until you do.
+
 ## Contribution Rules
 
 - Keep probes deterministic where possible.

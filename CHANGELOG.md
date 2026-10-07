@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+- The composite action installs aiasec's dependencies from a hash-locked file in its
+  own checkout (`.github/requirements/action.txt`), so pinning the action to a commit
+  also pins every package it installs. It used to install the newest releases that
+  the `pyproject.toml` ranges allowed at run time.
+- The CI, security and release workflows install their tools from hash-locked files
+  in `.github/requirements` and build without downloading a build backend; the Snyk
+  CLI installs with `npm ci` from a lockfile. Dependabot refreshes all of them.
+
 ## 0.2.0 - 2026-10-07
 
 - `timeoutSeconds` now bounds each request as a whole. An MCP target that kept sending
