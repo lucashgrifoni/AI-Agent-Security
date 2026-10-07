@@ -87,6 +87,13 @@ class Fake:
                 "anthropic": {"content": [{"type": "text", "text": "Done."}]},
                 "openai": {"choices": [{"message": {"content": "Done."}}]},
             }[self.provider]
+        if self.behavior == "reply-and-call":
+            # Text and a tool call on every turn, numbered by the user messages so far.
+            turn = sum(1 for m in body["messages"] if m["role"] == "user")
+            return 200, {"choices": [{"message": {"content": f"Reply {turn}.", "tool_calls": [
+                {"id": f"call_{turn}", "type": "function",
+                 "function": {"name": "send_email", "arguments": "{}"}}]},
+                "finish_reason": "tool_calls"}]}  # fmt: skip
         if self.behavior == "context-full":
             return 200, {"content": [{"type": "text", "text": "Step 1"}],
                          "stop_reason": "model_context_window_exceeded"}  # fmt: skip
@@ -447,6 +454,65 @@ def test_an_earlier_tool_call_stays_in_the_conversation(serve, monkeypatch, prov
     # by running the tool.
     assert last.count('"send_email"') == 2
     assert last.count("aiasec did not run this tool") == 2
+
+
+def test_replayed_calls_follow_the_reply_that_made_them(serve, monkeypatch) -> None:
+    # A probe-authored assistant message is not a turn the model took.
+    probe = Probe.model_validate(
+        {
+            "schema": "aiasec.probe/v1", "id": "seeded-001", "title": "t", "category": "c",
+            "severity": "high",
+            "inputs": [{"role": "user", "content": "First question."},
+                       {"role": "assistant", "content": "Seeded answer."},
+                       {"role": "user", "content": "Second question."},
+                       {"role": "user", "content": "Third question."}],
+            "expectations": [{"kind": "regex_not_match", "pattern": "7Q4"}],
+        }
+    )  # fmt: skip
+    fake = Fake("openai", "reply-and-call")
+
+    _observe("openai", serve(fake), probe, monkeypatch)
+
+    messages = fake.requests[-1]["body"]["messages"]
+    contents = [message.get("content") for message in messages]
+    assert not messages[contents.index("Seeded answer.") + 1].get("tool_calls")
+    for reply in ("Reply 1.", "Reply 2."):
+        assert messages[contents.index(reply) + 1].get("tool_calls"), reply
+
+
+def test_catalog_tools_that_share_a_name_all_reach_the_model() -> None:
+    config = ModelTargetConfig.model_validate({"transport": "openai", "model": "m"})
+    documents = [
+        {"path": "mcp://a/lookup", "content": "First lookup."},
+        {"path": "mcp://b/lookup", "content": "Second lookup."},
+        {"path": "mcp://c/bad name", "content": "First fallback."},
+        {"path": "mcp://d/also.bad", "content": "Second fallback."},
+        {"path": "mcp://e/" + "y" * 65, "content": "Third fallback."},
+    ]
+    inputs = [{"role": "tool_catalog", "documents": documents},
+              {"role": "user", "content": "Go on."}]  # fmt: skip
+
+    tools = {tool.name: tool.description for tool in build_transcript(inputs, config).tools}
+
+    assert tools == {
+        "lookup": "First lookup.",
+        "lookup_2": "Second lookup.",
+        "read_document": "First fallback.",
+        "read_document_2": "Second fallback.",
+        "read_document_3": "Third fallback.",
+    }
+
+
+def test_a_suffixed_catalog_name_stays_within_the_provider_limit() -> None:
+    config = ModelTargetConfig.model_validate({"transport": "openai", "model": "m"})
+    name = "z" * 64
+    inputs = [{"role": "tool_catalog", "documents": [{"path": f"mcp://a/{name}"},
+                                                     {"path": f"mcp://b/{name}"}]},
+              {"role": "user", "content": "Go on."}]  # fmt: skip
+
+    names = [tool.name for tool in build_transcript(inputs, config).tools]
+
+    assert names == [name, "z" * 62 + "_2"]
 
 
 def test_an_explicit_null_key_variable_sends_no_key(serve, monkeypatch) -> None:

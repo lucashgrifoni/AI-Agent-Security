@@ -204,8 +204,8 @@ For each probe turn aiasec sends the conversation so far as one request. The mod
 text is the reply. **The tool calls it asks for are recorded with their arguments and
 never executed**: the turn ends there, so a model that would call `send_email` fails
 the probe without anything being sent. On the next turn of a multi-turn probe, those
-calls are replayed, each followed by a result saying aiasec did not run the tool, so the
-model sees the conversation it actually had.
+calls are replayed after the reply that made them, each followed by a result saying
+aiasec did not run the tool, so the model sees the conversation it actually had.
 
 Probe inputs reach the model like this:
 
@@ -219,7 +219,10 @@ Probe inputs reach the model like this:
   otherwise `read_document`, and is declared
   to the model if `tools` does not declare it;
 - `tool_catalog` documents become tool definitions, named after the last segment of
-  the document path, with the document text, injected part included, as description;
+  the document path (`read_document` when the provider rejects that name), with the
+  document text, injected part included, as description. A name an earlier catalog
+  document already took gets a `_2`, `_3`... suffix, so every description reaches the
+  model;
 - any other role fails the run instead of being left out.
 
 A real agent may route these differently (a retrieval step, its own tool loop). This

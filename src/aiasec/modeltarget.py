@@ -176,12 +176,14 @@ class ModelAgentTarget:
         conversation it actually had.
         """
 
-        earlier: list[list[ToolCall]] = []
+        # Tool calls by the position of the reply that made them: drive_conversation
+        # appends each reply to the history right after the inputs it answered.
+        earlier: dict[int, list[ToolCall]] = {}
 
         def send(arguments: dict[str, Any]) -> tuple[str, list[ToolCall]]:
-            transcript = build_transcript(arguments["inputs"], self._config, earlier)
-            text, calls = self._request(transcript)
-            earlier.append(calls)
+            inputs = arguments["inputs"]
+            text, calls = self._request(build_transcript(inputs, self._config, earlier))
+            earlier[len(inputs)] = calls
             return text, calls
 
         return drive_conversation(probe, send)
@@ -266,19 +268,20 @@ class Transcript(BaseModel):
 def build_transcript(
     inputs: list[dict[str, Any]],
     config: ModelTargetConfig,
-    earlier_calls: list[list[ToolCall]] | None = None,
+    earlier_calls: dict[int, list[ToolCall]] | None = None,
 ) -> Transcript:
     """Map probe inputs to messages, tool calls with results, and tool definitions.
 
-    earlier_calls holds the tool calls the model made on each earlier turn; they follow
-    that turn's reply, each with a result saying the tool was not run.
+    earlier_calls maps the position in inputs of each earlier model reply to the tool
+    calls it made; they follow that reply, each with a result saying the tool was not
+    run. A probe-authored assistant input has no entry.
     """
 
     system = [config.system] if config.system else []
     tools = {tool.name: tool for tool in config.tools}
+    catalog: set[str] = set()
     entries: list[dict[str, Any]] = []
-    turns_seen = 0
-    for item in inputs:
+    for index, item in enumerate(inputs):
         role = item.get("role")
         content = item.get("content") or ""
         documents = item.get("documents") or []
@@ -291,9 +294,8 @@ def build_transcript(
             if text or role == "user":
                 entries.append({"kind": role, "text": text})
             if role == "assistant":
-                calls = (earlier_calls or [])[turns_seen : turns_seen + 1]
-                for number, call in enumerate(calls[0] if calls else [], start=1):
-                    call_id = f"aiasec_turn{turns_seen + 1}_call{number}"
+                for number, call in enumerate((earlier_calls or {}).get(index, []), start=1):
+                    call_id = f"aiasec_reply{index}_call{number}"
                     tools.setdefault(call.name, ModelTool(name=call.name))
                     entries.append(
                         {"kind": "call", "id": call_id, "name": call.name,
@@ -302,7 +304,6 @@ def build_transcript(
                     entries.append(
                         {"kind": "result", "id": call_id, "name": call.name, "text": NOT_RUN}
                     )
-                turns_seen += 1
         elif role == "rag_corpus":
             text = "Retrieved documents:\n\n" + _documents_text(documents)
             entries.append({"kind": "user", "text": text})
@@ -315,7 +316,10 @@ def build_transcript(
             entries.append({"kind": "result", "id": call_id, "name": name, "text": text})
         elif role == "tool_catalog":
             for document in documents:
-                name = _last_path_segment(document.get("path") or "", config.transport)
+                # Each document stays its own tool, so no description is lost.
+                segment = _last_path_segment(document.get("path") or "", config.transport)
+                name = _unused(segment, catalog, config.transport)
+                catalog.add(name)
                 description = " ".join(
                     filter(None, [document.get("content"), document.get("injected")])
                 )
@@ -362,6 +366,17 @@ def _tool_name_from_path(documents: list[dict[str, Any]], provider: str) -> str:
 def _last_path_segment(path: str, provider: str) -> str:
     segment = path.rstrip("/").rsplit("/", 1)[-1]
     return segment if _fits(segment, provider) else DEFAULT_TOOL
+
+
+def _unused(name: str, taken: set[str], provider: str) -> str:
+    """The name, or the name with the first free _2, _3... suffix within the limit."""
+
+    candidate, number = name, 1
+    while candidate in taken:
+        number += 1
+        suffix = f"_{number}"
+        candidate = name[: TOOL_NAME_LIMIT[provider] - len(suffix)] + suffix
+    return candidate
 
 
 def _is_loopback(host: str) -> bool:
