@@ -27,7 +27,12 @@ from aiasec.httptarget import HttpAgentTarget, HttpTargetConfig, HttpTargetError
 from aiasec.mcp.config import McpStdioConfig
 from aiasec.mcp.stdio import McpStdioAdapter
 from aiasec.mcp.target import McpAgentTarget, McpTargetError
-from aiasec.mcp.transport import JsonObject, LineJsonRpcTransport, McpTransportTimeout
+from aiasec.mcp.transport import (
+    JsonObject,
+    LineJsonRpcTransport,
+    McpTransportError,
+    McpTransportTimeout,
+)
 from aiasec.outputs.sarif import render_sarif
 
 ERA_STUB = Path("tests/mcp_era_stub.py")
@@ -148,6 +153,39 @@ def test_connect_works_over_the_public_line_transport() -> None:
     assert session.era == "legacy"
 
 
+# --- PR #10 re-review: the public line transport enforces the write deadline -----
+
+
+class NeverWrites(io.StringIO):
+    """A stream whose peer stopped reading: every write blocks forever."""
+
+    def write(self, text: str) -> int:
+        threading.Event().wait()
+        return 0
+
+
+def test_the_line_transport_gives_up_on_a_write_that_never_ends() -> None:
+    transport = LineJsonRpcTransport(reader=io.StringIO(), writer=NeverWrites())
+    adapter = McpStdioAdapter(transport, request_timeout=0.3)
+
+    with pytest.raises(McpTransportTimeout):
+        _finishes_within(3, lambda: adapter.request("ping"))
+    # The stuck write still holds the stream: later sends fail fast, close() returns.
+    with pytest.raises(McpTransportError, match="never finished"):
+        _finishes_within(3, lambda: adapter.request("ping"))
+    _finishes_within(3, transport.close)
+
+
+# --- Deeply nested JSON from a target is a contract error, not a traceback --------
+
+
+def test_deeply_nested_json_on_stdio_is_a_transport_error() -> None:
+    transport = LineJsonRpcTransport(reader=io.StringIO("[" * 100_000 + "\n"), writer=io.StringIO())
+
+    with pytest.raises(McpTransportError, match="malformed JSON"):
+        transport.receive(timeout=3)
+
+
 # --- PR #2: a tool result without text is a contract violation --------------------
 
 
@@ -215,12 +253,16 @@ def test_a_slow_drip_http_reply_respects_the_timeout() -> None:
 
 
 class ReplyHandler(BaseHTTPRequestHandler):
+    body = b'{"response": "no", "toolsCalled": []}'
+    posts = 0
+
     def log_message(self, format: str, *args: Any) -> None:  # noqa: A002 - base signature
         pass
 
     def do_POST(self) -> None:
+        type(self).posts += 1
         self.rfile.read(int(self.headers["Content-Length"]))
-        body = b'{"response": "no", "toolsCalled": []}'
+        body = self.body
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
@@ -250,6 +292,54 @@ def test_a_slow_name_lookup_counts_against_the_http_timeout(monkeypatch) -> None
 
         with pytest.raises(HttpTargetError, match="timed out"):
             _finishes_within(3, lambda: target.observe(load_probe_file(DIRECT)))
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+class CountingHandler(ReplyHandler):
+    posts = 0
+
+
+def test_a_timed_out_http_request_is_never_sent_later(monkeypatch) -> None:
+    resolve = socket.getaddrinfo
+
+    def slow_getaddrinfo(*args: Any, **kwargs: Any) -> Any:
+        time.sleep(1.5)
+        return resolve(*args, **kwargs)
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), CountingHandler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    monkeypatch.setattr(socket, "getaddrinfo", slow_getaddrinfo)
+    try:
+        url = f"http://127.0.0.1:{server.server_address[1]}/chat"
+        config = HttpTargetConfig.model_validate(
+            {"transport": "http", "url": url, "timeoutSeconds": 0.5}
+        )
+
+        with pytest.raises(HttpTargetError, match="timed out"):
+            HttpAgentTarget.start(config).observe(load_probe_file(DIRECT))
+        time.sleep(2.5)  # the lookup has long finished; a leftover worker would have sent
+
+        assert CountingHandler.posts == 0
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+class NestedJsonHandler(ReplyHandler):
+    body = b"[" * 100_000
+
+
+def test_deeply_nested_json_over_http_is_a_contract_error() -> None:
+    server = ThreadingHTTPServer(("127.0.0.1", 0), NestedJsonHandler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        url = f"http://127.0.0.1:{server.server_address[1]}/chat"
+        config = HttpTargetConfig.model_validate({"transport": "http", "url": url})
+
+        with pytest.raises(HttpTargetError, match="not JSON"):
+            HttpAgentTarget.start(config).observe(load_probe_file(DIRECT))
     finally:
         server.shutdown()
         server.server_close()

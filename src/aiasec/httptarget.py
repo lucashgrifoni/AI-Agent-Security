@@ -123,11 +123,17 @@ class HttpAgentTarget:
         timeout = self._config.timeout_seconds
         connection = self._connection()
         outcome: dict[str, Any] = {}
+        # Held while the caller gives up and while the worker decides to send, so a
+        # request the caller already reported as timed out is never sent afterwards.
+        decision = threading.Lock()
 
         def exchange() -> None:
             try:
                 connection.connect()
-                outcome["socket"] = connection.sock
+                with decision:
+                    if outcome.get("abandoned"):
+                        return
+                    outcome["socket"] = connection.sock
                 connection.request("POST", self._path, body=body, headers=headers)
                 response = connection.getresponse()
                 outcome["reply"] = (response.status, response.read(MAX_RESPONSE_BYTES + 1))
@@ -144,7 +150,9 @@ class HttpAgentTarget:
         worker.start()
         worker.join(timeout)
         if worker.is_alive():
-            sock = outcome.get("socket")
+            with decision:
+                outcome["abandoned"] = True
+                sock = outcome.get("socket")
             if sock is not None:
                 with suppress(OSError):
                     sock.shutdown(socket.SHUT_RDWR)
@@ -194,7 +202,7 @@ def _expand(value: str) -> str:
 def _parse_reply(payload: bytes, probe_id: str) -> tuple[str, list[str]]:
     try:
         reply = json.loads(payload)
-    except ValueError as exc:
+    except (ValueError, RecursionError) as exc:  # deep nesting exhausts the decoder's stack
         raise HttpTargetError(f"Target reply for probe {probe_id} is not JSON") from exc
     if not isinstance(reply, dict) or not isinstance(reply.get("response"), str):
         raise HttpTargetError(f"Target reply for probe {probe_id} must contain a response string")

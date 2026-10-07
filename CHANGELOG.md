@@ -9,8 +9,11 @@ All notable changes to this project will be documented in this file.
   reply a byte at a time restarted it with each byte; either could hang a run and CI
   forever. The deadline starts before the request is written: an MCP target that stops
   reading its input is stopped at the deadline instead of blocking a large request,
-  and for HTTP it covers name resolution, connecting and the TLS handshake. The
+  and for HTTP it covers name resolution, connecting and the TLS handshake. An HTTP
+  request that timed out during the name lookup is never sent afterwards. The
   `server/discover` probe has the same single deadline.
+- A target reply with deeply nested JSON fails the run as a contract error (exit 2);
+  it used to escape as a `RecursionError` traceback with exit 1.
 - Only the errors MCP 2026-07-28 defines (`-32020`, `-32021`, `-32022`) mark a server
   as modern. Any other code in the reserved `-32020` to `-32099` range, such as
   `-32042` from 2025-11-25, now leads to the `initialize` fallback instead of failing

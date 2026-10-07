@@ -76,6 +76,7 @@ class LineJsonRpcTransport:
         self._reader = reader
         self._writer = writer
         self._receive_timeout_seconds = receive_timeout_seconds
+        self._stuck_writer: threading.Thread | None = None
         self._lines: queue.Queue[str | McpTransportError] = queue.Queue()
         threading.Thread(target=self._pump, daemon=True).start()
 
@@ -92,34 +93,48 @@ class LineJsonRpcTransport:
         """Serialize and write one JSON-RPC message.
 
         A peer that stops reading fills the pipe and blocks the write. With a
-        ``timeout``, a watchdog calls ``_abort()`` when it passes; the subprocess
-        transport stops the process there, which makes the blocked write fail.
+        ``timeout``, the write runs in a worker and send() gives up on it at the
+        deadline, then calls ``_abort()``: the subprocess transport stops the process,
+        which ends the write. A write that is still stuck keeps the stream, so later
+        sends fail at once instead of queueing behind it.
         """
 
-        expired = threading.Event()
-        watchdog = None
-        if timeout is not None:
-            watchdog = threading.Timer(timeout, self._expire, (expired,))
-            watchdog.start()
+        if self._write_in_flight():
+            raise McpTransportError("An earlier write to the transport never finished")
+        line = json.dumps(message, ensure_ascii=False, separators=(",", ":")) + "\n"
+        if timeout is None:
+            self._write(line)
+            return
+        failure: list[McpTransportError] = []
+
+        def write() -> None:
+            try:
+                self._write(line)
+            except McpTransportError as exc:
+                failure.append(exc)
+
+        writer = threading.Thread(target=write, daemon=True)
+        writer.start()
+        writer.join(timeout)
+        if writer.is_alive():
+            self._stuck_writer = writer
+            self._abort()
+            raise McpTransportTimeout(f"Target did not read the request within {timeout} seconds")
+        if failure:
+            raise failure[0]
+
+    def _write(self, line: str) -> None:
         try:
-            self._writer.write(json.dumps(message, ensure_ascii=False, separators=(",", ":")))
-            self._writer.write("\n")
+            self._writer.write(line)
             self._writer.flush()
         except OSError as exc:
-            if not expired.is_set():
-                raise McpTransportError("Unable to write JSON-RPC message to transport") from exc
-        finally:
-            if watchdog is not None:
-                watchdog.cancel()
-        if expired.is_set():
-            raise McpTransportTimeout(f"Target did not read the request within {timeout} seconds")
+            raise McpTransportError("Unable to write JSON-RPC message to transport") from exc
 
-    def _expire(self, expired: threading.Event) -> None:
-        expired.set()
-        self._abort()
+    def _write_in_flight(self) -> bool:
+        return self._stuck_writer is not None and self._stuck_writer.is_alive()
 
     def _abort(self) -> None:
-        """Unblock a write stuck on a peer that stopped reading; a plain stream cannot."""
+        """End a write stuck on a peer that stopped reading; a plain stream cannot."""
 
     def receive(self, timeout: float | None = None) -> JsonObject:
         """Return the next message, or fail once the receive deadline passes."""
@@ -140,9 +155,13 @@ class LineJsonRpcTransport:
         return _parse_line(item)
 
     def close(self) -> None:
-        """Close the underlying streams."""
+        """Close the underlying streams.
 
-        for stream in (self._writer, self._reader):
+        A stream with a stuck write stays open: closing it would wait for that write.
+        """
+
+        streams = (self._reader,) if self._write_in_flight() else (self._writer, self._reader)
+        for stream in streams:
             with suppress(OSError):
                 stream.close()
 
@@ -153,7 +172,8 @@ def _parse_line(raw_line: str) -> JsonObject:
 
     try:
         parsed = json.loads(raw_line)
-    except json.JSONDecodeError as exc:
+    except (json.JSONDecodeError, RecursionError) as exc:
+        # Deeply nested JSON exhausts the decoder's recursion limit instead of failing to parse.
         raise McpTransportError("Transport returned malformed JSON") from exc
 
     if not isinstance(parsed, dict):
@@ -238,8 +258,12 @@ class _SubprocessJsonRpcTransport(LineJsonRpcTransport):
         the read to return, so a hung server would block close() until it exited.
         """
 
-        with suppress(OSError):
-            self._writer.close()
+        if self._stuck_writer is not None:
+            # _abort() stopped the process at the deadline; let the failed write end.
+            self._stuck_writer.join(self._shutdown_timeout_seconds)
+        if not self._write_in_flight():
+            with suppress(OSError):
+                self._writer.close()
         if self._process.poll() is None:
             try:
                 self._process.wait(timeout=self._shutdown_timeout_seconds)
