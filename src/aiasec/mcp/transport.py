@@ -19,6 +19,10 @@ class McpTransportError(RuntimeError):
     """Raised when a JSON-RPC transport cannot read or write messages."""
 
 
+class McpTransportTimeout(McpTransportError):
+    """Raised when no message arrives before the receive deadline."""
+
+
 class JsonRpcTransport(Protocol):
     """Minimal fakeable transport contract for JSON-RPC messages."""
 
@@ -26,7 +30,11 @@ class JsonRpcTransport(Protocol):
         """Send one JSON-RPC message."""
 
     def receive(self) -> JsonObject:
-        """Receive one JSON-RPC message."""
+        """Receive one JSON-RPC message.
+
+        A transport may also accept a ``timeout`` keyword that overrides its default
+        deadline for this one message; the adapter passes it only when it needs one.
+        """
 
     def close(self) -> None:
         """Close the transport."""
@@ -167,14 +175,15 @@ class _SubprocessJsonRpcTransport(LineJsonRpcTransport):
         finally:
             self._lines.put("")  # end of stream
 
-    def receive(self) -> JsonObject:
+    def receive(self, timeout: float | None = None) -> JsonObject:
         """Return the next message, or fail once the receive deadline passes."""
 
+        deadline = timeout if timeout is not None else self._receive_timeout_seconds
         try:
-            raw_line = self._lines.get(timeout=self._receive_timeout_seconds)
+            raw_line = self._lines.get(timeout=deadline)
         except queue.Empty as exc:
-            raise McpTransportError(
-                f"Target sent no JSON-RPC message within {self._receive_timeout_seconds} seconds"
+            raise McpTransportTimeout(
+                f"Target sent no JSON-RPC message within {deadline} seconds"
             ) from exc
         return _parse_line(raw_line)
 

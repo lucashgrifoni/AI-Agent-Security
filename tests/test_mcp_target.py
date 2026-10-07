@@ -138,6 +138,69 @@ def test_target_without_the_agent_tool_is_rejected(tmp_path) -> None:
     assert "not_exposed" in result.output
 
 
+ERA_STUB = Path("tests/mcp_era_stub.py")
+
+
+def _stub_config(*args: str, **extra: object) -> McpStdioConfig:
+    return McpStdioConfig.model_validate(
+        {"transport": "stdio", "command": [sys.executable, str(ERA_STUB), *args], **extra}
+    )
+
+
+def test_the_reference_targets_speak_the_modern_protocol() -> None:
+    with McpAgentTarget.start(_config(GOOD)) as target:
+        assert (target.session.era, target.session.protocol_version) == ("modern", "2026-07-28")
+
+
+@pytest.mark.parametrize(
+    ("args", "extra"),
+    [
+        (("legacy-error",), {}),
+        (("legacy-silent",), {"timeoutSeconds": 2}),
+    ],
+    ids=["legacy-error", "legacy-silent"],
+)
+def test_legacy_targets_fall_back_to_initialize(args: tuple[str, ...], extra: dict) -> None:
+    probes = load_probes_from_dir(PROBES)
+
+    with McpAgentTarget.start(_stub_config(*args, **extra)) as target:
+        results = run_probes_against(probes, target.observe)
+        era = target.session.era
+
+    assert era == "legacy"
+    assert all(result.passed for result in results)
+
+
+def test_a_modern_only_target_is_driven_without_initialize() -> None:
+    probes = load_probes_from_dir(PROBES)
+
+    with McpAgentTarget.start(_stub_config("modern-only", "2026-07-28")) as target:
+        results = run_probes_against(probes, target.observe)
+        era = target.session.era
+
+    assert era == "modern"
+    assert all(result.passed for result in results)
+
+
+def test_a_target_with_no_mutual_version_fails_the_run(tmp_path) -> None:
+    config = tmp_path / "target.json"
+    config.write_text(
+        _stub_config("modern-only", "2099-01-01").model_dump_json(by_alias=True), "utf-8"
+    )
+
+    result = _run("run", "--target", str(config), "--execute", "--output", str(tmp_path / "r.md"))
+
+    assert result.exit_code == 2
+    assert "2099-01-01" in result.output
+
+
+def test_protocol_legacy_skips_the_probe_on_a_silent_server() -> None:
+    config = _stub_config("legacy-silent", protocol="legacy")
+
+    with McpAgentTarget.start(config) as target:
+        assert target.session.era == "legacy"
+
+
 def test_a_silent_target_times_out_instead_of_hanging(tmp_path) -> None:
     silent = tmp_path / "silent.py"
     silent.write_text("import time\ntime.sleep(30)\n", encoding="utf-8")

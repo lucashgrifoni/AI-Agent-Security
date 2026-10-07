@@ -26,6 +26,9 @@ class McpStdioConfig(BaseModel):
     agent_tool: str = Field(default="aiasec_agent", alias="agentTool", min_length=1)
     # Upper bound on waiting for any single message, so a hung target cannot hang CI.
     timeout_seconds: float = Field(default=30.0, alias="timeoutSeconds", gt=0, le=600)
+    # auto probes with server/discover and falls back to initialize for a legacy server.
+    # legacy skips the probe, for servers that ignore unknown methods instead of erroring.
+    protocol: Literal["auto", "modern", "legacy"] = "auto"
 
     @field_validator("command")
     @classmethod

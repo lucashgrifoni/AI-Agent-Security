@@ -15,7 +15,7 @@ from typing import Any
 from aiasec.core.evaluator.rules import TargetObservation
 from aiasec.core.probe import Probe
 from aiasec.mcp.config import McpStdioConfig
-from aiasec.mcp.stdio import McpStdioAdapter
+from aiasec.mcp.stdio import DEFAULT_PROBE_TIMEOUT_SECONDS, McpSession, McpStdioAdapter
 from aiasec.mcp.transport import ProcessRunner, StdioProcessRunner
 
 
@@ -46,7 +46,10 @@ class McpAgentTarget:
         client = McpStdioAdapter(transport)
         target = cls(client, agent_tool=config.agent_tool)
         try:
-            client.initialize()
+            client.connect(
+                mode=config.protocol,
+                probe_timeout=min(DEFAULT_PROBE_TIMEOUT_SECONDS, config.timeout_seconds),
+            )
             exposed = {tool.get("name") for tool in client.list_tools()}
             if config.agent_tool not in exposed:
                 raise McpTargetError(
@@ -57,6 +60,14 @@ class McpAgentTarget:
             target.close()
             raise
         return target
+
+    @property
+    def session(self) -> McpSession:
+        """The protocol era and version agreed with the target."""
+
+        if self._client.session is None:
+            raise McpTargetError("Target session is not connected")
+        return self._client.session
 
     def observe(self, probe: Probe) -> TargetObservation:
         """Send one probe's inputs to the agent and return what it did."""

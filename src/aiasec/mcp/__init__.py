@@ -6,6 +6,7 @@ from aiasec.mcp.transport import (
     JsonRpcTransport,
     LineJsonRpcTransport,
     McpTransportError,
+    McpTransportTimeout,
     ProcessRunner,
     StdioProcessRunner,
 )
@@ -18,6 +19,7 @@ __all__ = [
     "McpRemoteError",
     "McpStdioAdapter",
     "McpTransportError",
+    "McpTransportTimeout",
     "ProcessRunner",
     "StdioProcessRunner",
 ]
