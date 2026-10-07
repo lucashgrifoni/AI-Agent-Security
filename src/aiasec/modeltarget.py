@@ -171,9 +171,7 @@ class ModelAgentTarget:
             self._config.timeout_seconds,
         )
         if status != 200:
-            reason = _reason(payload)
-            if self._api_key:  # an error message may quote the key back
-                reason = reason.replace(self._api_key, "[redacted]")
+            reason = _reason(payload, self._api_key)
             raise ModelTargetError(f"The {provider} API answered HTTP {status}{reason}")
         try:
             reply = json.loads(payload)
@@ -270,15 +268,31 @@ def _is_loopback(host: str) -> bool:
         return False
 
 
-def _reason(payload: bytes) -> str:
-    """The provider's error message, if it gave one, shortened."""
+def _reason(payload: bytes, secret: str | None) -> str:
+    """The provider's error message, if it gave one, with the key redacted, shortened."""
 
     try:
         error = json.loads(payload).get("error")
     except (ValueError, RecursionError, AttributeError):
         return ""
     message = error.get("message") if isinstance(error, dict) else error
-    return f": {message[:200]}" if isinstance(message, str) and message else ""
+    if not isinstance(message, str) or not message:
+        return ""
+    if secret:  # an error message may quote the key back; redact before cutting it
+        message = message.replace(secret, "[redacted]")
+    return f": {message[:200]}"
+
+
+def _observed(text: str, calls: list[ToolCall], *, refused: bool) -> tuple[str, list[ToolCall]]:
+    """A reply with no text and no tool call is a contract error, not a pass.
+
+    It would pass every pattern check without the model having answered. Only a
+    refusal the API itself signals counts as an empty answer.
+    """
+
+    if not text and not calls and not refused:
+        raise ValueError("the reply has no text and no tool call")
+    return text, calls
 
 
 # Anthropic Messages API: https://platform.claude.com/docs/en/api/messages
@@ -317,7 +331,7 @@ def _anthropic_reply(reply: dict[str, Any]) -> tuple[str, list[ToolCall]]:
             texts.append(block["text"])
         elif block["type"] == "tool_use":
             calls.append(ToolCall(name=block["name"], arguments=block["input"]))
-    return "\n".join(texts), calls
+    return _observed("\n".join(texts), calls, refused=reply.get("stop_reason") == "refusal")
 
 
 def _openai_tools(transcript: Transcript) -> list[dict[str, Any]]:
@@ -370,7 +384,8 @@ def _openai_body(transcript: Transcript, config: ModelTargetConfig) -> dict[str,
 
 
 def _openai_reply(reply: dict[str, Any]) -> tuple[str, list[ToolCall]]:
-    message = reply["choices"][0]["message"]
+    choice = reply["choices"][0]
+    message = choice["message"]
     calls = []
     for call in message.get("tool_calls") or []:
         if call["type"] != "function":
@@ -378,7 +393,8 @@ def _openai_reply(reply: dict[str, Any]) -> tuple[str, list[ToolCall]]:
         function = call["function"]
         # The arguments are a JSON string, possibly invalid; the evaluator handles both.
         calls.append(ToolCall(name=function["name"], arguments=function["arguments"]))
-    return message.get("content") or "", calls
+    refused = choice.get("finish_reason") == "content_filter"
+    return _observed(message.get("content") or "", calls, refused=refused)
 
 
 # Ollama /api/chat: https://docs.ollama.com/api/chat
@@ -403,7 +419,7 @@ def _ollama_reply(reply: dict[str, Any]) -> tuple[str, list[ToolCall]]:
         ToolCall(name=call["function"]["name"], arguments=call["function"].get("arguments"))
         for call in message.get("tool_calls") or []
     ]
-    return message.get("content") or "", calls
+    return _observed(message.get("content") or "", calls, refused=False)
 
 
 RENDERERS = {"anthropic": _anthropic_body, "openai": _openai_body, "ollama": _ollama_body}

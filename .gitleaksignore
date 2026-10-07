@@ -1,0 +1,3 @@
+# Known false positives, one fingerprint each (commit:file:rule:line).
+# A fake API key literal in a test, made at run time since the commit after it.
+29c0093bae76d0b4c9414e73d2440d664aa6a4ec:tests/test_model_targets.py:generic-api-key:27
