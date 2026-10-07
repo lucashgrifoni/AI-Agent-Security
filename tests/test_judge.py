@@ -113,7 +113,7 @@ def test_the_gate_ignores_the_judge(judge, tmp_path: Path) -> None:
 
     gate = CliRunner().invoke(
         app, ["gate", "--report", str(tmp_path / "report.sarif"), "--max-high", "0",
-              "--exit-on-fail"],
+              "--exit-on-fail", "--allow-partial"],
     )  # fmt: skip
 
     assert gate.exit_code == 0

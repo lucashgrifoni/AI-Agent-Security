@@ -6,7 +6,7 @@
 
 `aiasec` is a small, reproducible testbed for adversarial regression checks against AI agents and MCP tool boundaries. It sends a battery of adversarial probes to your agent, scores each response with deterministic rules, and writes a SARIF report that a release gate turns into PASS or FAIL in CI.
 
-- 17 bundled probes across 7 attack categories, defined in YAML and mapped to OWASP
+- 22 bundled probes across 7 attack categories, defined in YAML and mapped to the OWASP LLM, MCP and Agentic Top 10 lists
 - deterministic, rules-only evaluation: no LLM decides the result (an optional LLM judge adds advisory opinions)
 - a live target mode that sends every probe to the agent under test over MCP stdio or HTTP
 - Markdown and SARIF 2.1.0 reports that GitHub code scanning can display
@@ -62,8 +62,10 @@ aiasec gate --report good.sarif --max-critical 0 --max-high 0 --exit-on-fail
 ```
 
 `--execute` is required because `--target` starts the command in the config. Read the
-config before you pass it. To test your own agent, wrap it in a harness that follows
-[docs/target-contract.md](docs/target-contract.md) and point `--target` at its config.
+config before you pass it. To test your own agent, copy a harness template from
+[`examples/harness`](examples/harness/README.md) (MCP stdio or HTTP), connect its
+`run_agent` to your agent, and point `--target` at its config. The full contract is in
+[docs/target-contract.md](docs/target-contract.md).
 
 To test an agent behind HTTP, start the HTTP reference target and point `--target`
 at its config:
@@ -154,9 +156,12 @@ jobs:
 ```
 
 Inputs: `target` (required), `probes` (default: the bundled suite), `sarif-file`
-(default `aiasec.sarif`), `max-critical` and `max-high` (default `0`), `max-medium`
-and `max-low` (default unlimited), and `python-version` (default `3.12`). Outputs:
-`sarif-file` and `verdict`. The action runs on Linux and macOS runners.
+(default `aiasec.sarif`), `categories`, `min-severity` and `probe-ids` (default: no
+filter; see [Select probes](#select-probes)), `max-critical` and `max-high` (default
+`0`), `max-medium` and `max-low` (default unlimited), and `python-version` (default
+`3.12`). Outputs: `sarif-file` and `verdict`. The action runs on Linux and macOS
+runners. When you set a selection input, the action lets the gate accept the subset
+report (`--allow-partial`), because your workflow asked for it.
 
 ### Inspect probes
 
@@ -180,8 +185,10 @@ aiasec probes list --category tool-abuse --min-severity critical
 A category or id that matches no loaded probe exits 2 and names it; an empty name in
 either option (an unset variable, a stray comma) and a selection that matches nothing
 exit 2 too. A filtered report records the filters under
-`runs[].properties.aiasec.selection` in SARIF and in a `Selection` line in Markdown,
-because the gate only sees counts: gate a release on the full suite, not on a subset.
+`runs[].properties.aiasec.selection` in SARIF and in a `Selection` line in Markdown.
+The gate refuses such a report (exit 2) unless you pass `--allow-partial`: thresholds
+met by part of the suite say nothing about the rest, so a release should be gated on
+the full suite.
 
 ### Score a supplied response
 
@@ -230,14 +237,49 @@ failing verdict exit 1 so CI stops; without it the gate reports and exits 0.
 The gate fails closed. SARIF lists only failures, so an empty result list cannot
 tell "nothing failed" from "nothing ran". A report that does not record how many
 probes were executed, or records zero, exits 2, as does an unreadable report or a
-result whose severity cannot be determined.
+result whose severity cannot be determined. A report of a probe subset exits 2 too,
+unless `--allow-partial` says the subset is intended; the gate's output then lists
+the filters under `selections`.
+
+### Compare runs
+
+Keep the SARIF report of a run as a baseline and compare the next run against it:
+
+```bash
+aiasec compare --baseline last-release.sarif --report aiasec.sarif --exit-on-regression
+```
+
+The output gives each run's attack success rate (failed probes divided by executed
+probes) and the change, then lists what differs check by check. A check is one
+expectation of a probe, identified by what it checks (kind, field, tool, pattern), not
+by its position, so reordering a probe file changes nothing:
+
+- `regressions`: failing checks that passed in the baseline;
+- `newFindings`: failing checks the baseline did not run, such as new probes or new
+  expectations;
+- `fixed`: checks that failed in the baseline and passed in this run;
+- `notRun`: probes the baseline ran and this run did not;
+- `notEvaluated`: checks the baseline ran that this run did not, although their probe
+  ran, because the expectation was removed or changed since.
+
+The verdict is `REGRESSION` when `regressions` or `newFindings` is not empty. When only
+`notRun` or `notEvaluated` is not empty, it is `INCOMPLETE`: a check that did not run
+cannot show a regression, and a removed check is not a fix. Pass `--allow-partial` to
+accept that. `--exit-on-regression` exits 1 unless the verdict is `NO REGRESSION`.
+`compare` reads reports with one run, as `aiasec run` writes them; reports written
+before aiasec 0.3 do not record which checks ran and cannot be compared (exit 2).
+
+A model that samples its replies can fail a probe in one run and pass it in the next.
+Compare runs made with the same model settings, at temperature 0 where the model
+allows it.
 
 Exit codes:
 
 | Command | 0 | 1 | 2 |
 |---|---|---|---|
 | `aiasec run` | no probe failed | at least one probe failed | bad input: no probes found, invalid probe, unreadable file |
-| `aiasec gate` | `PASS`, or `FAIL` without `--exit-on-fail` | `FAIL` with `--exit-on-fail` | unreadable report, or no executed probes recorded |
+| `aiasec gate` | `PASS`, or `FAIL` without `--exit-on-fail` | `FAIL` with `--exit-on-fail` | unreadable report, no executed probes recorded, or a subset report without `--allow-partial` |
+| `aiasec compare` | no regression, or any verdict without `--exit-on-regression` | `REGRESSION`, or `INCOMPLETE` without `--allow-partial`, with `--exit-on-regression` | unreadable report, or one that does not record which probes ran |
 
 SARIF results point at the probe file that defines the failed expectation and
 carry a stable `partialFingerprints` entry, so GitHub code scanning can display
@@ -245,17 +287,17 @@ and deduplicate them.
 
 ## Probe Suite
 
-Seventeen bundled probes covering seven categories:
+Twenty-two bundled probes covering seven categories:
 
-| Category | Probes | OWASP LLM 2025 | OWASP MCP 2025 (beta) |
-|---|---|---|---|
-| `prompt-injection` | `direct-injection-001`, `encoding-injection-001` | LLM01 | |
-| `indirect-injection` | `rag-doc-poison-001`, `hidden-html-injection-001` | LLM01 | MCP06 |
-| `tool-abuse` | `tool-coercion-001`, `tool-chain-exfil-001`, `tool-argument-traversal-001` | LLM06 | MCP06 |
-| `data-exfil` | `markdown-image-exfil-001`, `url-embed-exfil-001`, `tool-argument-exfil-001` | LLM02 | MCP06 |
-| `jailbreak` | `persona-swap-001`, `crescendo-001` | LLM01 | |
-| `output-manipulation` | `html-script-output-001`, `sql-payload-output-001`, `shell-payload-output-001` | LLM05 | |
-| `mcp-specific` | `tool-description-poisoning-001`, `tool-shadowing-001` | LLM01, LLM06 | MCP03 |
+| Category | Probes | OWASP LLM 2025 | OWASP MCP 2025 (beta) | OWASP Agentic 2026 |
+|---|---|---|---|---|
+| `prompt-injection` | `direct-injection-001`, `encoding-injection-001` | LLM01 | | ASI01 |
+| `indirect-injection` | `rag-doc-poison-001`, `hidden-html-injection-001`, `issue-comment-injection-001`, `email-injection-001`, `malformed-json-injection-001` | LLM01 | MCP06 | ASI01 |
+| `tool-abuse` | `tool-coercion-001`, `tool-chain-exfil-001`, `tool-argument-traversal-001` | LLM06 | MCP06 | ASI02 |
+| `data-exfil` | `markdown-image-exfil-001`, `url-embed-exfil-001`, `tool-argument-exfil-001`, `system-prompt-leak-001` | LLM02, LLM07 | MCP06 | ASI01, ASI02 |
+| `jailbreak` | `persona-swap-001`, `crescendo-001`, `many-shot-001` | LLM01 | | ASI01 |
+| `output-manipulation` | `html-script-output-001`, `sql-payload-output-001`, `shell-payload-output-001` | LLM05 | | ASI05, ASI09 |
+| `mcp-specific` | `tool-description-poisoning-001`, `tool-shadowing-001` | LLM01, LLM06 | MCP03 | ASI04 |
 
 [docs/owasp-mapping.md](docs/owasp-mapping.md) explains each mapping and what the
 suite does not cover.
@@ -402,7 +444,7 @@ src/aiasec/
   mcp/                 MCP stdio adapter, target driver, config, fixtures, and transports
   outputs/             Markdown and SARIF renderers
   probes/              bundled probe suite, one directory per category
-examples/              reference MCP targets (good, vulnerable) and a tools/list fixture
+examples/              harness templates, reference targets (good, vulnerable) and a tools/list fixture
 docs/                  probe authoring guide and target contract
 tests/                 unit and end-to-end tests
 ```

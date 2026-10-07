@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from contextlib import suppress
 from pathlib import Path
 from typing import Any, Literal
@@ -126,6 +128,18 @@ class Probe(BaseModel):
         if not value:
             raise ValueError("probe must define at least one expectation")
         return value
+
+
+def expectation_id(probe_id: str, expectation: ProbeExpectation) -> str:
+    """Identify a check by what it checks, not by its position in the probe file.
+
+    Reordering a probe's expectations keeps their ids; changing what one checks gives
+    it a new id, so a comparison never treats a different check as the same one.
+    """
+
+    content = [probe_id, expectation.kind, expectation.on, expectation.tool_name,
+               expectation.pattern]  # fmt: skip
+    return hashlib.sha256(json.dumps(content).encode("utf-8")).hexdigest()[:16]
 
 
 def load_probe_file(path: Path, *, root: Path | None = None) -> Probe:

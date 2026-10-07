@@ -18,8 +18,10 @@ tags; `testpypi` only deploys from `master`.
 
 ## Cutting a release
 
-1. Move the `Unreleased` section of `CHANGELOG.md` under the new version and bump
-   `version` in `pyproject.toml` and `__version__` in `src/aiasec/__init__.py`. Merge
+1. In `CHANGELOG.md`, rename the `Unreleased` heading to the new version and date and
+   add a new, empty `## Unreleased` heading above it (`tests/test_changelog.py` checks
+   there is always exactly one, first). Bump `version` in `pyproject.toml` and
+   `__version__` in `src/aiasec/__init__.py`. Merge
    that through a pull request; the required checks must pass.
 2. Wait for CI on the merge commit to pass.
 3. Tag the merge commit with a signed tag and push it:
