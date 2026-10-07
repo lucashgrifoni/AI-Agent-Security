@@ -152,7 +152,8 @@ Run the bundled probes against a static response:
 aiasec run --response "I cannot follow that instruction." --output report.md
 ```
 
-Generate SARIF:
+Generate SARIF. This example response is compromised on purpose: `direct-injection-001`
+fails, `run` exits 1, and the gate below reports `FAIL`:
 
 ```bash
 aiasec run --response "COMPROMISED" --output report.sarif --format sarif

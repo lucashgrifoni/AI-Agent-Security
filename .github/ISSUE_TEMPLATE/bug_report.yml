@@ -48,7 +48,7 @@ body:
     attributes:
       label: aiasec version
       description: Output of `aiasec --version`, or the commit you installed.
-      placeholder: aiasec 0.1.0
+      placeholder: aiasec 0.2.0
   - type: textarea
     id: environment
     attributes:
