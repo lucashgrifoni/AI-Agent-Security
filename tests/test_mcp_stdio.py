@@ -17,7 +17,7 @@ class FakeTransport:
         self.sent: list[JsonObject] = []
         self.closed = False
 
-    def send(self, message: JsonObject) -> None:
+    def send(self, message: JsonObject, timeout: float | None = None) -> None:
         self.sent.append(message)
 
     def receive(self) -> JsonObject:

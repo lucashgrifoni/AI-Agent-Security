@@ -36,7 +36,7 @@ line. It exposes one tool that runs the agent on one probe turn. aiasec:
 | `cwd` | aiasec's working directory | directory the command runs in; relative paths in `command` resolve against it |
 | `env` | `{}` | extra environment variables, merged over aiasec's own environment |
 | `agentTool` | `aiasec_agent` | name of the tool that runs the agent |
-| `timeoutSeconds` | `30` | longest wait for any single message; a silent target fails the run (1 to 600) |
+| `timeoutSeconds` | `30` | longest time for each request, from the moment aiasec starts writing it to the reply; notifications do not extend it, a target that stops reading its input is stopped at the deadline, and a target that misses it fails the run (1 to 600) |
 | `protocol` | `auto` | `auto` probes the server's MCP era; `modern` requires 2026-07-28; `legacy` skips the probe and uses `initialize` |
 
 The child process inherits aiasec's environment. Do not run aiasec with secrets in its
@@ -87,13 +87,18 @@ The probe is scored on the reply to the last turn and on every tool called in an
 }
 ```
 
-- `content`: the agent's reply for this turn. aiasec joins every `text` block.
+- `content`: the agent's reply for this turn. aiasec joins every `text` block. At
+  least one `text` block with a string `text` is required (it may be empty); a result
+  with no text fails the run, because reading it as an empty reply would pass every
+  `regex_not_match` check without the agent having answered.
 - `structuredContent.toolsCalled`: the names of every tool the agent called while
   handling this turn, in order. Required, even when empty. A missing or malformed
   list fails the run, because a target that does not report its tool calls would
   pass every `tool_not_called` check by omission.
 - `isError: true` fails the run. A harness that cannot run a probe must not look like
   an agent that resisted it.
+- Any JSON-RPC message longer than 1,048,576 characters, or nested too deeply to
+  parse, fails the run.
 
 ## HTTP targets
 
@@ -117,7 +122,7 @@ tool arguments above, and answers status 200 with:
 |---|---|---|
 | `url` | required | `http` or `https` URL with a host |
 | `headers` | `{}` | extra request headers; `${NAME}` is replaced by environment variable `NAME`, and a missing variable fails the run before any request |
-| `timeoutSeconds` | `30` | longest wait for one reply (1 to 600) |
+| `timeoutSeconds` | `30` | longest time for one request, from resolving the host name to the last byte of the reply; a slow lookup, connection, handshake or reply still fails at the deadline (1 to 600) |
 
 Keep secrets in environment variables, never as literal header values in a file that
 may be committed. aiasec does not follow redirects, so a credential header is never
@@ -159,8 +164,8 @@ With `protocol: auto` (the default), aiasec first sends `server/discover` with
 |---|---|---|
 | a `DiscoverResult` listing `2026-07-28` | modern server | every request carries `_meta` with `protocolVersion`, `clientInfo` and `clientCapabilities`; no handshake |
 | `UnsupportedProtocolVersionError` (`-32022`) or a `DiscoverResult` without `2026-07-28` | modern server | uses a handshake-based version from the advertised list if there is one, otherwise fails with the server's list |
-| another error in the MCP-reserved range (`-32020` to `-32099`) | modern server that refused the probe | fails the run |
-| any other error, or no reply within `min(5, timeoutSeconds)` seconds | legacy server | `initialize` with `2025-11-25`, then `notifications/initialized`; a late reply to the probe is discarded |
+| `-32020` (header mismatch) or `-32021` (missing required client capability), the other errors 2026-07-28 defines | modern server that refused the probe | fails the run |
+| any other error, including other codes in the reserved `-32020` to `-32099` range (earlier revisions used it too, for example `-32042` in 2025-11-25), or no reply within `min(5, timeoutSeconds)` seconds, however many notifications arrive | legacy server | `initialize` with `2025-11-25`, then `notifications/initialized`; a late reply to the probe is discarded |
 
 A modern harness must also return `"resultType": "complete"`. A result without
 `resultType` counts as complete, as the spec requires for earlier revisions. An

@@ -318,7 +318,7 @@ Initial controls:
 - probe payloads target reserved `.test` hostnames, never a live host
 - SARIF includes only failed findings
 - aiasec starts a process only for `run --target` with `--execute`; `mcp tools list` never does
-- a target that stays silent longer than `timeoutSeconds` fails the run instead of hanging CI
+- a target that does not answer a request within `timeoutSeconds` fails the run instead of hanging CI, even when it keeps sending notifications, stops reading its input, or drips its reply
 - a target that does not report its tool calls fails the run instead of passing `tool_not_called` checks
 
 ## Project Structure

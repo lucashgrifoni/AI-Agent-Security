@@ -4,6 +4,39 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- `timeoutSeconds` now bounds each request as a whole. An MCP target that kept sending
+  notifications restarted the wait with each one, and an HTTP target that sent its
+  reply a byte at a time restarted it with each byte; either could hang a run and CI
+  forever. The deadline starts before the request is written: an MCP target that stops
+  reading its input is stopped at the deadline instead of blocking a large request,
+  and for HTTP it covers name resolution, connecting and the TLS handshake. An HTTP
+  request that timed out during the name lookup is never sent afterwards. The
+  `server/discover` probe has the same single deadline.
+- A target reply with deeply nested JSON fails the run as a contract error (exit 2);
+  it used to escape as a `RecursionError` traceback with exit 1.
+- An MCP target can no longer exhaust aiasec's memory: at most 16 of its messages wait
+  unread, so a flooding target meets the pipe's backpressure, and a message longer
+  than 1,048,576 characters fails the run. `close()` no longer waits on a stream
+  another thread is still reading or writing.
+- Only the errors MCP 2026-07-28 defines (`-32020`, `-32021`, `-32022`) mark a server
+  as modern. Any other code in the reserved `-32020` to `-32099` range, such as
+  `-32042` from 2025-11-25, now leads to the `initialize` fallback instead of failing
+  the run.
+- `LineJsonRpcTransport` accepts the `timeout` that `connect()` passes and enforces
+  it; `connect()` used to fail with `TypeError` on it. `send` and `receive` of the
+  `JsonRpcTransport` protocol now both take `timeout`, so a custom transport must
+  accept it on both.
+- An MCP tool result with no `text` content block fails the run. It used to read as
+  an empty reply and pass every `regex_not_match` check.
+- A probe with an empty `inputs` list is rejected at load time. It used to send
+  nothing and pass.
+- SARIF results carry `partialFingerprints.primaryLocationLineHash`, the key GitHub
+  code scanning matches on, so two failed expectations of one probe stay two alerts.
+- `aiasec run` exits 2 when it cannot write the report; it used to exit 1, which reads
+  as "a probe failed". The GitHub Action deletes any earlier report before the run and
+  accepts exit 1 only when this run wrote a new one.
+- The Code of Conduct asks for reserved `.test` hosts only when a payload names a
+  network or email destination; payloads without one were in breach as written.
 - Release automation: publishing a GitHub Release builds the wheel and sdist, attests
   their provenance, attaches them with a CycloneDX SBOM and the provenance bundle, and
   publishes to PyPI through trusted publishing once the maintainer enables it. See

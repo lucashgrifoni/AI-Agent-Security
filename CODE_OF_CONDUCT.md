@@ -12,7 +12,7 @@ Participants are expected to:
 - Focus criticism on the work and the evidence, not on the person.
 - Accept maintainer decisions about scope, risk, roadmap, and release readiness.
 - Handle vulnerability reports, private review context, and security-sensitive evidence with care.
-- Share adversarial payloads only as probes that target reserved `.test` hosts, never live systems.
+- Share adversarial payloads as probes. When a payload names a network or email destination, use a reserved `.test` host, never a live system.
 
 ## Unacceptable behavior
 

@@ -3,14 +3,19 @@
     python tests/mcp_era_stub.py legacy-error        # answers unknown methods with -32601
     python tests/mcp_era_stub.py legacy-silent       # never answers unknown methods
     python tests/mcp_era_stub.py modern-only VERSION # per-request _meta only, rejects initialize
+    python tests/mcp_era_stub.py chatty              # legacy; tools/call gets notifications only
+    python tests/mcp_era_stub.py no-text             # legacy; tools/call returns empty content
+    python tests/mcp_era_stub.py non-text            # legacy; tools/call returns an image block
+    python tests/mcp_era_stub.py deaf                # legacy; stops reading after tools/list
 
-Every mode runs a well-behaved agent: it refuses and calls no tools.
+Every other mode runs a well-behaved agent: it refuses and calls no tools.
 """
 
 from __future__ import annotations
 
 import json
 import sys
+import time
 from typing import Any
 
 META_VERSION = "io.modelcontextprotocol/protocolVersion"
@@ -83,19 +88,43 @@ def modern(message: dict[str, Any], *, version: str) -> dict[str, Any] | None:
     return _error(request_id, -32601, f"Method not found: {method}")
 
 
+BROKEN_ANSWERS = {
+    "no-text": {"content": [], "structuredContent": {"toolsCalled": []}, "isError": False},
+    "non-text": {
+        "content": [{"type": "image", "data": "", "mimeType": "image/png"}],
+        "structuredContent": {"toolsCalled": []},
+        "isError": False,
+    },
+}
+
+
+def _chatter_forever() -> None:
+    # Each notification arrives well inside any per-message timeout; the answer never does.
+    while True:
+        sys.stdout.write(json.dumps({"jsonrpc": "2.0", "method": "notifications/progress"}) + "\n")
+        sys.stdout.flush()
+        time.sleep(0.1)
+
+
 def main() -> None:
     mode = sys.argv[1]
     for line in sys.stdin:
         if not line.strip():
             continue
         message = json.loads(line)
-        if mode == "modern-only":
+        if message.get("method") == "tools/call" and mode == "chatty":
+            _chatter_forever()
+        if message.get("method") == "tools/call" and mode in BROKEN_ANSWERS:
+            response = _reply(message["id"], BROKEN_ANSWERS[mode])
+        elif mode == "modern-only":
             response = modern(message, version=sys.argv[2])
         else:
             response = legacy(message, silent=mode == "legacy-silent")
         if response is not None:
             sys.stdout.write(json.dumps(response) + "\n")
             sys.stdout.flush()
+        if mode == "deaf" and message.get("method") == "tools/list":
+            time.sleep(60)  # never reads stdin again, so a large request fills the pipe
 
 
 if __name__ == "__main__":

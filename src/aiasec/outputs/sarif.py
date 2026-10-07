@@ -111,6 +111,7 @@ def _result(finding: Finding) -> dict[str, Any]:
     # GitHub code scanning only displays results that carry a location, so every result
     # points at the probe file that defines the failed expectation.
     source = finding.source or f"{finding.category}/{finding.probe_id}.yaml"
+    fingerprint = _fingerprint(finding)
     return {
         "ruleId": finding.probe_id,
         "level": _sarif_level(finding.severity),
@@ -123,7 +124,13 @@ def _result(finding: Finding) -> dict[str, Any]:
                 }
             }
         ],
-        "partialFingerprints": {FINGERPRINT_KEY: _fingerprint(finding)},
+        # GitHub code scanning matches alerts on primaryLocationLineHash alone. Left out,
+        # upload-sarif hashes the location line, which is the same for every expectation
+        # of a probe, so two failed expectations would merge into one alert.
+        "partialFingerprints": {
+            "primaryLocationLineHash": fingerprint,
+            FINGERPRINT_KEY: fingerprint,
+        },
         "properties": properties,
     }
 

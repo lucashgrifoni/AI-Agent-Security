@@ -32,7 +32,7 @@ class ScriptedTransport:
         self.sent: list[JsonObject] = []
         self.timeouts: list[float | None] = []
 
-    def send(self, message: JsonObject) -> None:
+    def send(self, message: JsonObject, timeout: float | None = None) -> None:
         self.sent.append(message)
 
     def receive(self, timeout: float | None = None) -> JsonObject:
@@ -105,7 +105,9 @@ def test_modern_tool_call_keeps_its_arguments_next_to_the_meta() -> None:
     assert params["_meta"][META_VERSION] == MODERN_PROTOCOL_VERSION
 
 
-@pytest.mark.parametrize("code", [-32601, -32602, -32600, -32000])
+# -32042, -32050 and -32099 sit in the MCP-reserved range but are not errors 2026-07-28
+# defines (2025-11-25 uses -32042), so they identify a legacy server too.
+@pytest.mark.parametrize("code", [-32601, -32602, -32600, -32000, -32042, -32050, -32099])
 def test_any_non_modern_probe_error_falls_back_to_initialize(code: int) -> None:
     transport = ScriptedTransport(
         [_error(1, code), _result(2, INITIALIZE_OK), _result(3, TOOLS)]
@@ -142,7 +144,9 @@ def test_silent_probe_falls_back_and_skips_the_late_discover_reply() -> None:
 
     assert session.era == "legacy"
     assert tools[0]["name"] == "aiasec_agent"
-    assert transport.timeouts[0] == 0.5
+    # The transport gets what is left of the probe deadline, a hair under 0.5 s.
+    probe_wait = transport.timeouts[0]
+    assert probe_wait is not None and 0.4 < probe_wait <= 0.5
 
 
 def test_unsupported_version_with_no_mutual_version_fails_without_initialize() -> None:
