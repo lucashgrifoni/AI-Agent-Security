@@ -18,7 +18,7 @@ class QueuedJsonRpcTransport:
         self.sent: list[JsonObject] = []
         self.closed = False
 
-    def send(self, message: JsonObject) -> None:
+    def send(self, message: JsonObject, timeout: float | None = None) -> None:
         """Record one outgoing JSON-RPC message."""
 
         self.sent.append(message)

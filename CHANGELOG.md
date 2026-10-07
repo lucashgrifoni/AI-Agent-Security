@@ -7,14 +7,18 @@ All notable changes to this project will be documented in this file.
 - `timeoutSeconds` now bounds each request as a whole. An MCP target that kept sending
   notifications restarted the wait with each one, and an HTTP target that sent its
   reply a byte at a time restarted it with each byte; either could hang a run and CI
-  forever. The `server/discover` probe has the same single deadline.
+  forever. The deadline starts before the request is written: an MCP target that stops
+  reading its input is stopped at the deadline instead of blocking a large request,
+  and for HTTP it covers name resolution, connecting and the TLS handshake. The
+  `server/discover` probe has the same single deadline.
 - Only the errors MCP 2026-07-28 defines (`-32020`, `-32021`, `-32022`) mark a server
   as modern. Any other code in the reserved `-32020` to `-32099` range, such as
   `-32042` from 2025-11-25, now leads to the `initialize` fallback instead of failing
   the run.
 - `LineJsonRpcTransport` accepts the `timeout` that `connect()` passes and enforces
-  it; `connect()` used to fail with `TypeError` on it. `timeout` is now part of the
-  `JsonRpcTransport` protocol.
+  it; `connect()` used to fail with `TypeError` on it. `send` and `receive` of the
+  `JsonRpcTransport` protocol now both take `timeout`, so a custom transport must
+  accept it on both.
 - An MCP tool result with no `text` content block fails the run. It used to read as
   an empty reply and pass every `regex_not_match` check.
 - A probe with an empty `inputs` list is rejected at load time. It used to send

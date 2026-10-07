@@ -253,9 +253,17 @@ class McpStdioAdapter:
             params = {**(params or {}), "_meta": self._request_meta(params, meta_version)}
         request_id = self._next_request_id
         self._next_request_id += 1
-        self._transport.send(_jsonrpc_message(method, params, request_id=request_id))
+        message = _jsonrpc_message(method, params, request_id=request_id)
+        # One deadline for the whole exchange, starting before the write: a peer that
+        # stops reading, sends notifications, or replies late to an abandoned request
+        # cannot hold the request open past it.
+        deadline = None if timeout is None else time.monotonic() + timeout
         try:
-            return self._receive_response(request_id, timeout)
+            if timeout is None:
+                self._transport.send(message)
+            else:
+                self._transport.send(message, timeout=timeout)
+            return self._receive_response(request_id, deadline, timeout)
         except McpTransportTimeout:
             # A late reply to this request must not be read as the reply to the next one.
             self._abandoned_ids.add(request_id)
@@ -269,11 +277,9 @@ class McpStdioAdapter:
         meta[META_CLIENT_CAPABILITIES] = {}
         return meta
 
-    def _receive_response(self, expected_id: int, timeout: float | None) -> Any:
-        # One deadline for the whole exchange: a notification or a late reply to an
-        # abandoned request does not restart it, so a chatty peer cannot hold the
-        # request open forever.
-        deadline = None if timeout is None else time.monotonic() + timeout
+    def _receive_response(
+        self, expected_id: int, deadline: float | None, timeout: float | None
+    ) -> Any:
         while True:
             if deadline is None:
                 response = self._transport.receive()

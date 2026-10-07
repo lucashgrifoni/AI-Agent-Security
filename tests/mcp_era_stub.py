@@ -6,6 +6,7 @@
     python tests/mcp_era_stub.py chatty              # legacy; tools/call gets notifications only
     python tests/mcp_era_stub.py no-text             # legacy; tools/call returns empty content
     python tests/mcp_era_stub.py non-text            # legacy; tools/call returns an image block
+    python tests/mcp_era_stub.py deaf                # legacy; stops reading after tools/list
 
 Every other mode runs a well-behaved agent: it refuses and calls no tools.
 """
@@ -122,6 +123,8 @@ def main() -> None:
         if response is not None:
             sys.stdout.write(json.dumps(response) + "\n")
             sys.stdout.flush()
+        if mode == "deaf" and message.get("method") == "tools/list":
+            time.sleep(60)  # never reads stdin again, so a large request fills the pipe
 
 
 if __name__ == "__main__":

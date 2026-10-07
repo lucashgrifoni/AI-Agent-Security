@@ -26,8 +26,12 @@ class McpTransportTimeout(McpTransportError):
 class JsonRpcTransport(Protocol):
     """Minimal fakeable transport contract for JSON-RPC messages."""
 
-    def send(self, message: JsonObject) -> None:
-        """Send one JSON-RPC message."""
+    def send(self, message: JsonObject, timeout: float | None = None) -> None:
+        """Send one JSON-RPC message.
+
+        ``timeout`` bounds the write in seconds; a transport raises McpTransportTimeout
+        when it passes. The adapter passes the keyword only when a request has a deadline.
+        """
 
     def receive(self, timeout: float | None = None) -> JsonObject:
         """Receive one JSON-RPC message.
@@ -84,15 +88,38 @@ class LineJsonRpcTransport:
             end = McpTransportError(f"Unable to read JSON-RPC message from transport: {exc}")
         self._lines.put(end)
 
-    def send(self, message: JsonObject) -> None:
-        """Serialize and write one JSON-RPC message."""
+    def send(self, message: JsonObject, timeout: float | None = None) -> None:
+        """Serialize and write one JSON-RPC message.
 
+        A peer that stops reading fills the pipe and blocks the write. With a
+        ``timeout``, a watchdog calls ``_abort()`` when it passes; the subprocess
+        transport stops the process there, which makes the blocked write fail.
+        """
+
+        expired = threading.Event()
+        watchdog = None
+        if timeout is not None:
+            watchdog = threading.Timer(timeout, self._expire, (expired,))
+            watchdog.start()
         try:
             self._writer.write(json.dumps(message, ensure_ascii=False, separators=(",", ":")))
             self._writer.write("\n")
             self._writer.flush()
         except OSError as exc:
-            raise McpTransportError("Unable to write JSON-RPC message to transport") from exc
+            if not expired.is_set():
+                raise McpTransportError("Unable to write JSON-RPC message to transport") from exc
+        finally:
+            if watchdog is not None:
+                watchdog.cancel()
+        if expired.is_set():
+            raise McpTransportTimeout(f"Target did not read the request within {timeout} seconds")
+
+    def _expire(self, expired: threading.Event) -> None:
+        expired.set()
+        self._abort()
+
+    def _abort(self) -> None:
+        """Unblock a write stuck on a peer that stopped reading; a plain stream cannot."""
 
     def receive(self, timeout: float | None = None) -> JsonObject:
         """Return the next message, or fail once the receive deadline passes."""
@@ -197,6 +224,11 @@ class _SubprocessJsonRpcTransport(LineJsonRpcTransport):
             writer=process.stdin,
             receive_timeout_seconds=receive_timeout_seconds,
         )
+
+    def _abort(self) -> None:
+        # A stopped process breaks the pipe, so the blocked write fails instead of waiting.
+        with suppress(OSError):
+            self._process.kill()
 
     def close(self) -> None:
         """Stop the child process, then close its pipes.

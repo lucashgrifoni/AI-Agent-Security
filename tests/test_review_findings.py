@@ -1,4 +1,4 @@
-"""Regression tests for the findings of the automated reviews on PRs #1 to #8.
+"""Regression tests for the findings of the automated reviews on PRs #1 to #8 and #10.
 
 Each test reproduced its finding against the code before the fix. Tests that could
 hang on the bug run the call in a thread and fail if it is still running at the
@@ -8,6 +8,7 @@ deadline, so a regression makes the suite fail instead of stalling it.
 from __future__ import annotations
 
 import io
+import socket
 import sys
 import threading
 import time
@@ -21,7 +22,7 @@ from typer.testing import CliRunner
 
 from aiasec.cli.app import app
 from aiasec.core.evaluator.rules import TargetObservation, evaluate_probe
-from aiasec.core.probe import load_probe_file, load_probes_from_dir
+from aiasec.core.probe import ProbeInput, load_probe_file, load_probes_from_dir
 from aiasec.httptarget import HttpAgentTarget, HttpTargetConfig, HttpTargetError
 from aiasec.mcp.config import McpStdioConfig
 from aiasec.mcp.stdio import McpStdioAdapter
@@ -61,7 +62,7 @@ class ChattyTransport:
     def __init__(self) -> None:
         self.sent: list[JsonObject] = []
 
-    def send(self, message: JsonObject) -> None:
+    def send(self, message: JsonObject, timeout: float | None = None) -> None:
         self.sent.append(message)
 
     def receive(self, timeout: float | None = None) -> JsonObject:
@@ -95,6 +96,30 @@ def test_a_chatty_target_that_never_answers_a_tool_call_times_out() -> None:
         }
     )
     probe = load_probe_file(DIRECT)
+
+    def run() -> None:
+        with McpAgentTarget.start(config) as target:
+            target.observe(probe)
+
+    with pytest.raises(McpTransportTimeout):
+        _finishes_within(15, run)
+
+
+# --- PR #10, P1: the deadline covers writing the request -------------------------
+
+
+def test_a_target_that_stops_reading_cannot_block_a_large_request() -> None:
+    config = McpStdioConfig.model_validate(
+        {
+            "transport": "stdio",
+            "command": [sys.executable, str(ERA_STUB), "deaf"],
+            "timeoutSeconds": 1,
+        }
+    )
+    # Far larger than any pipe buffer: the write blocks once the target stops reading.
+    probe = load_probe_file(DIRECT).model_copy(
+        update={"inputs": [ProbeInput(role="user", content="x" * 4_000_000)]}
+    )
 
     def run() -> None:
         with McpAgentTarget.start(config) as target:
@@ -184,6 +209,47 @@ def test_a_slow_drip_http_reply_respects_the_timeout() -> None:
 
         with pytest.raises(HttpTargetError, match="timed out"):
             _finishes_within(10, lambda: target.observe(load_probe_file(DIRECT)))
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+class ReplyHandler(BaseHTTPRequestHandler):
+    def log_message(self, format: str, *args: Any) -> None:  # noqa: A002 - base signature
+        pass
+
+    def do_POST(self) -> None:
+        self.rfile.read(int(self.headers["Content-Length"]))
+        body = b'{"response": "no", "toolsCalled": []}'
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+# --- PR #10, P2: the HTTP deadline covers name resolution and connecting ----------
+
+
+def test_a_slow_name_lookup_counts_against_the_http_timeout(monkeypatch) -> None:
+    resolve = socket.getaddrinfo
+
+    def slow_getaddrinfo(*args: Any, **kwargs: Any) -> Any:
+        time.sleep(4)  # no socket timeout bounds name resolution
+        return resolve(*args, **kwargs)
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), ReplyHandler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    monkeypatch.setattr(socket, "getaddrinfo", slow_getaddrinfo)
+    try:
+        url = f"http://127.0.0.1:{server.server_address[1]}/chat"
+        config = HttpTargetConfig.model_validate(
+            {"transport": "http", "url": url, "timeoutSeconds": 1}
+        )
+        target = HttpAgentTarget.start(config)
+
+        with pytest.raises(HttpTargetError, match="timed out"):
+            _finishes_within(3, lambda: target.observe(load_probe_file(DIRECT)))
     finally:
         server.shutdown()
         server.server_close()

@@ -17,7 +17,6 @@ import re
 import socket
 import ssl
 import threading
-import time
 from contextlib import suppress
 from types import TracebackType
 from typing import Any, Literal
@@ -122,37 +121,46 @@ class HttpAgentTarget:
             **self._headers,
         }
         timeout = self._config.timeout_seconds
-        deadline = time.monotonic() + timeout
-        expired = threading.Event()
-        watchdog: threading.Timer | None = None
         connection = self._connection()
-        try:
-            connection.connect()
-            # The socket timeout bounds each read, not the reply: a target that sends a
-            # byte just inside it would never time out. At the deadline the watchdog shuts
-            # the socket down, which ends whatever read is in progress.
-            watchdog = threading.Timer(
-                max(deadline - time.monotonic(), 0.0), _expire, (connection.sock, expired)
-            )
-            watchdog.start()
-            connection.request("POST", self._path, body=body, headers=headers)
-            response = connection.getresponse()
-            payload = response.read(MAX_RESPONSE_BYTES + 1)
-        except (OSError, http.client.HTTPException) as exc:
-            if expired.is_set() or isinstance(exc, TimeoutError):
-                raise HttpTargetError(f"Target timed out after {timeout} s") from exc
-            raise HttpTargetError(f"HTTP request to the target failed: {exc}") from exc
-        finally:
-            if watchdog is not None:
-                watchdog.cancel()
-            connection.close()
+        outcome: dict[str, Any] = {}
 
-        # A reply cut short by the watchdog can read as complete, so check the flag too.
-        if expired.is_set():
+        def exchange() -> None:
+            try:
+                connection.connect()
+                outcome["socket"] = connection.sock
+                connection.request("POST", self._path, body=body, headers=headers)
+                response = connection.getresponse()
+                outcome["reply"] = (response.status, response.read(MAX_RESPONSE_BYTES + 1))
+            except Exception as exc:  # noqa: BLE001 - handed to the calling thread below
+                outcome["error"] = exc
+            finally:
+                connection.close()
+
+        # The socket timeout bounds each operation, not the request: a slow name lookup
+        # (no socket timeout covers it), a slow handshake, or a reply sent a byte at a
+        # time can each outlast it. The exchange gets timeoutSeconds in total; past it,
+        # shutting the socket down ends any read still in progress.
+        worker = threading.Thread(target=exchange, daemon=True)
+        worker.start()
+        worker.join(timeout)
+        if worker.is_alive():
+            sock = outcome.get("socket")
+            if sock is not None:
+                with suppress(OSError):
+                    sock.shutdown(socket.SHUT_RDWR)
             raise HttpTargetError(f"Target timed out after {timeout} s")
-        if response.status != 200:
+        error = outcome.get("error")
+        if isinstance(error, TimeoutError):
+            raise HttpTargetError(f"Target timed out after {timeout} s") from error
+        if isinstance(error, (OSError, http.client.HTTPException)):
+            raise HttpTargetError(f"HTTP request to the target failed: {error}") from error
+        if error is not None:
+            raise error
+
+        status, payload = outcome["reply"]
+        if status != 200:
             raise HttpTargetError(
-                f"Target answered HTTP {response.status} for probe {probe_id}; aiasec expects 200 "
+                f"Target answered HTTP {status} for probe {probe_id}; aiasec expects 200 "
                 "and does not follow redirects"
             )
         if len(payload) > MAX_RESPONSE_BYTES:
@@ -169,13 +177,6 @@ class HttpAgentTarget:
                 self._host, self._port, timeout=timeout, context=ssl.create_default_context()
             )
         return http.client.HTTPConnection(self._host, self._port, timeout=timeout)
-
-
-def _expire(sock: socket.socket | None, expired: threading.Event) -> None:
-    expired.set()
-    if sock is not None:
-        with suppress(OSError):
-            sock.shutdown(socket.SHUT_RDWR)
 
 
 def _expand(value: str) -> str:

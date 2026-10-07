@@ -36,7 +36,7 @@ line. It exposes one tool that runs the agent on one probe turn. aiasec:
 | `cwd` | aiasec's working directory | directory the command runs in; relative paths in `command` resolve against it |
 | `env` | `{}` | extra environment variables, merged over aiasec's own environment |
 | `agentTool` | `aiasec_agent` | name of the tool that runs the agent |
-| `timeoutSeconds` | `30` | longest wait for the reply to each request, counted from when it is sent; notifications do not extend it, and a target that misses it fails the run (1 to 600) |
+| `timeoutSeconds` | `30` | longest time for each request, from the moment aiasec starts writing it to the reply; notifications do not extend it, a target that stops reading its input is stopped at the deadline, and a target that misses it fails the run (1 to 600) |
 | `protocol` | `auto` | `auto` probes the server's MCP era; `modern` requires 2026-07-28; `legacy` skips the probe and uses `initialize` |
 
 The child process inherits aiasec's environment. Do not run aiasec with secrets in its
@@ -120,7 +120,7 @@ tool arguments above, and answers status 200 with:
 |---|---|---|
 | `url` | required | `http` or `https` URL with a host |
 | `headers` | `{}` | extra request headers; `${NAME}` is replaced by environment variable `NAME`, and a missing variable fails the run before any request |
-| `timeoutSeconds` | `30` | longest time for one request, from connecting to the last byte of the reply; a target that sends its reply slowly still fails at the deadline (1 to 600) |
+| `timeoutSeconds` | `30` | longest time for one request, from resolving the host name to the last byte of the reply; a slow lookup, connection, handshake or reply still fails at the deadline (1 to 600) |
 
 Keep secrets in environment variables, never as literal header values in a file that
 may be committed. aiasec does not follow redirects, so a credential header is never
