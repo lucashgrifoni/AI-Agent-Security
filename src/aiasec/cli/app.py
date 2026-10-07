@@ -35,6 +35,7 @@ from aiasec.mcp.stdio import McpProtocolError, McpRemoteError, McpStdioAdapter
 from aiasec.mcp.target import McpAgentTarget, McpTargetError
 from aiasec.mcp.transport import McpTransportError
 from aiasec.modeltarget import PROVIDERS, ModelAgentTarget, ModelTargetConfig
+from aiasec.outputs.html import render_html
 from aiasec.outputs.markdown import render_markdown
 from aiasec.outputs.sarif import (
     HTTP_TARGET_MODE,
@@ -53,6 +54,7 @@ class OutputFormat(StrEnum):
     auto = "auto"
     markdown = "markdown"
     sarif = "sarif"
+    html = "html"
 
 
 class MinSeverity(StrEnum):
@@ -239,8 +241,11 @@ def _validation_message(exc: ValidationError) -> str:
 def _resolve_format(output: Path, output_format: OutputFormat) -> OutputFormat:
     if output_format is not OutputFormat.auto:
         return output_format
-    if output.suffix.lower() in {".sarif", ".json"}:
+    suffix = output.suffix.lower()
+    if suffix in {".sarif", ".json"}:
         return OutputFormat.sarif
+    if suffix in {".html", ".htm"}:
+        return OutputFormat.html
     return OutputFormat.markdown
 
 
@@ -471,9 +476,13 @@ def run(
         asked = sum(1 for probe in probes if probe.judge)
         typer.echo(f"Asking the judge, the {judge.label}, about {asked} probe(s).")
         opinions = _opinions(judge, judge_results(results, kept, judge))
-    rendered_format = _resolve_format(output, output_format)
 
-    renderer = render_sarif_json if rendered_format is OutputFormat.sarif else render_markdown
+    renderers = {
+        OutputFormat.sarif: render_sarif_json,
+        OutputFormat.html: render_html,
+        OutputFormat.markdown: render_markdown,
+    }
+    renderer = renderers[_resolve_format(output, output_format)]
     report = renderer(
         results, observation_mode=observation_mode, selection=selection, judge=opinions
     )

@@ -56,6 +56,14 @@ class Fake:
                 "openai": {"choices": [{"message": {"content": None}, "finish_reason": "stop"}]},
                 "ollama": {"message": {"role": "assistant", "content": ""}},
             }[self.provider]
+        if self.behavior == "cut":
+            return 200, {
+                "anthropic": {"content": [{"type": "text", "text": "Step 1"}],
+                              "stop_reason": "max_tokens"},
+                "openai": {"choices": [{"message": {"content": "Step 1"},
+                                        "finish_reason": "length"}]},
+                "ollama": {"message": {"content": "Step 1"}, "done_reason": "length"},
+            }[self.provider]  # fmt: skip
         if self.behavior == "openai-refusal-field":
             message = {"role": "assistant", "content": None, "refusal": "I can't help with that."}
             return 200, {"choices": [{"message": message, "finish_reason": "stop"}]}
@@ -359,6 +367,14 @@ def test_a_refusal_the_api_signals_is_an_empty_reply(serve, monkeypatch, provide
     observation = _observe(provider, serve(fake), _probe("direct-injection-001"), monkeypatch)
 
     assert observation.assistant_final_response == "" and observation.tool_calls == []
+
+
+@pytest.mark.parametrize("provider", ["anthropic", "openai", "ollama"])
+def test_a_reply_cut_at_max_tokens_fails_the_run(serve, monkeypatch, provider: str) -> None:
+    fake = Fake(provider, "cut")
+
+    with pytest.raises(ModelTargetError, match="cut at maxTokens"):
+        _observe(provider, serve(fake), _probe("direct-injection-001"), monkeypatch)
 
 
 def test_an_openai_refusal_field_is_the_reply(serve, monkeypatch) -> None:

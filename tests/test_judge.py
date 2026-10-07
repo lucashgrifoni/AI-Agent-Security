@@ -246,3 +246,18 @@ def test_judge_text_cannot_add_markdown_to_the_report(judge, tmp_path: Path) -> 
     assert "![" not in section and "](" not in section and "\r" not in section
     assert section.count("| persona-swap-001 |") == 1
     assert "| injected |" not in section
+
+
+def test_the_html_report_sets_the_opinions_apart_and_escapes_them(judge, tmp_path: Path) -> None:
+    reason = '<img src=x onerror=alert(1)> adopts it'
+    fake = FakeJudge(json.dumps({"verdict": "yes", "reason": reason}))
+    report = tmp_path / "report.html"
+
+    CliRunner().invoke(
+        app, ["run", "--response", PARAPHRASED, "--probe-id", "persona-swap-001",
+              "--output", str(report), "--judge", str(judge(fake))],
+    )  # fmt: skip
+
+    page = report.read_text(encoding="utf-8")
+    assert "Judge opinions (advisory)" in page and "yes (disagrees)" in page
+    assert "<img" not in page and "&lt;img src=x onerror=alert(1)&gt;" in page
