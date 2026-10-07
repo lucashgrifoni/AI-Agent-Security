@@ -272,7 +272,8 @@ class Transcript(BaseModel):
     system: str
     tools: list[ModelTool]
     # Entries: {"kind": "user"|"assistant", "text"}
-    #          | {"kind": "call", "id", "name", "arguments"}
+    #          | {"kind": "call", "id", "name", "arguments", "joins"}
+    #            (joins: the call continues the model reply in the message before it)
     #          | {"kind": "result", "id", "name", "text"}
     entries: list[dict[str, Any]]
 
@@ -308,11 +309,13 @@ def build_transcript(
                 calls = (earlier_calls or {}).get(index, [])
                 ids = [f"aiasec_reply{index}_call{n}" for n in range(1, len(calls) + 1)]
                 # A reply's calls stay together, as one response, then all their results.
-                for call_id, call in zip(ids, calls, strict=True):
+                # They join the reply's own text when it has some, never a message the
+                # probe wrote before it.
+                for number, (call_id, call) in enumerate(zip(ids, calls, strict=True)):
                     tools.setdefault(call.name, ModelTool(name=call.name))
                     entries.append(
                         {"kind": "call", "id": call_id, "name": call.name,
-                         "arguments": call.arguments}
+                         "arguments": call.arguments, "joins": number > 0 or bool(text.strip())}
                     )  # fmt: skip
                 for call_id, call in zip(ids, calls, strict=True):
                     entries.append(
@@ -459,8 +462,8 @@ def _anthropic_body(transcript: Transcript, config: ModelTargetConfig) -> dict[s
                 "name": entry["name"],
                 "input": _arguments_object(entry.get("arguments")),
             }
-            # A call joins the assistant message before it: one response, one message.
-            if messages and messages[-1]["role"] == "assistant":
+            # A call of the reply before it joins that message: one response, one message.
+            if entry.get("joins") and messages and messages[-1]["role"] == "assistant":
                 previous = messages[-1]
                 if isinstance(previous["content"], str):
                     previous["content"] = [{"type": "text", "text": previous["content"]}]
@@ -561,8 +564,8 @@ def _chat_messages(transcript: Transcript, *, ollama: bool) -> list[dict[str, An
                     arguments = json.dumps(_arguments_object(arguments))
                 function = {"name": entry["name"], "arguments": arguments}
                 call = {"id": entry["id"], "type": "function", "function": function}
-            # A call joins the assistant message before it: one response, one message.
-            if messages and messages[-1]["role"] == "assistant":
+            # A call of the reply before it joins that message: one response, one message.
+            if entry.get("joins") and messages and messages[-1]["role"] == "assistant":
                 messages[-1].setdefault("tool_calls", []).append(call)
             else:
                 content = "" if ollama else None
@@ -598,6 +601,10 @@ def _openai_reply(reply: dict[str, Any]) -> tuple[str, list[ToolCall], Cut]:
         function = call["function"]
         # The arguments are a JSON string, possibly invalid; the evaluator handles both.
         calls.append(_call(function["name"], function["arguments"], "openai"))
+    # The deprecated single call, announced by finish_reason "function_call".
+    legacy = message.get("function_call")
+    if legacy is not None:
+        calls.append(_call(legacy["name"], legacy.get("arguments"), "openai"))
     # A refusal arrives as message.refusal, with no content; it is the model's reply.
     refusal = message.get("refusal")
     text = refusal if isinstance(refusal, str) and refusal else message.get("content")
