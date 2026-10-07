@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ai-agent-security-testbed"
-version = "0.1.0"
+version = "0.2.0"
 description = "Rules-only security regression testbed for AI agents and MCP tool boundaries."
 readme = "README.md"
 requires-python = ">=3.12"

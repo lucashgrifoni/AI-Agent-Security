@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## 0.2.0 - 2026-10-07
 
 - `timeoutSeconds` now bounds each request as a whole. An MCP target that kept sending
   notifications restarted the wait with each one, and an HTTP target that sent its
