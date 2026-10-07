@@ -4,14 +4,29 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- The composite action installs aiasec's dependencies from a hash-locked file in its
+  own checkout (`.github/requirements/action.txt`), so pinning the action to a commit
+  also pins every package it installs. It used to install the newest releases that
+  the `pyproject.toml` ranges allowed at run time.
+- The CI, security and release workflows install their tools from hash-locked files
+  in `.github/requirements` and build without downloading a build backend; the Snyk
+  CLI comes from Snyk's setup action pinned by commit, at a fixed version whose
+  checksum it verifies. Dependabot refreshes the locks and the action pin.
+- `aiasec run --tool-calls-file calls.json` reads observed tool calls, with their
+  arguments, in the `toolsCalled` shape of the target contract. With `--tools-called`
+  (names only) the two argument probes can only report that the arguments were not
+  reported. The file cannot be combined with `--tools-called` or `--target`.
+- A tool call reported with a blank name, as a bare string or in an object, is a
+  contract error, from a target or from the file. A bare `""` used to pass as a
+  call to no tool at all.
+- An invalid target config, or `mcp tools list --config`, lists each invalid field
+  with its reason on its own line. The message no longer carries pydantic's
+  documentation links or the rejected value, which could be a header or env secret.
 - Copyable harness templates in `examples/harness` (MCP stdio and HTTP, standard
   library only) put your own agent behind the target contract: replace `run_agent`
   and point a target config at it. An unconnected template makes `aiasec run` exit 2
   rather than pass. The reference targets now run on these templates, with their two
   agents in `examples/reference_agents.py` instead of three copies.
-
-## Unreleased
-
 - Five new probes (22 in total): `issue-comment-injection-001` and
   `email-injection-001` (instructions in an issue body or an email the agent reads),
   `malformed-json-injection-001` (a forged record after a truncated JSON tool result),
