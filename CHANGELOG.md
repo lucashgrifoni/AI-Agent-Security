@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+- Target mode speaks MCP 2026-07-28. aiasec probes with `server/discover`, sends the
+  protocol version, client info and client capabilities in `_meta` on every request to a
+  modern server, and falls back to the `initialize` handshake for a legacy server, as the
+  2026-07-28 stdio backward-compatibility rules describe.
+- The fallback handshake offers `2025-11-25` instead of `2024-11-05`; a legacy server
+  answers with the version it speaks.
+- New target config field `protocol` (`auto`, `modern`, `legacy`; default `auto`).
+- A result whose `resultType` is not `complete` (for example `input_required`) fails the
+  run instead of being read as an empty answer.
+- The reference targets are dual-era, and `aiasec run` prints the negotiated version.
+
 ## 0.1.0 - 2026-10-06
 
 First release.

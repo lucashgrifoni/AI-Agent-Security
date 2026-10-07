@@ -325,7 +325,7 @@ tests/                 unit and end-to-end tests
 ## Current Limits
 
 - target mode supports MCP stdio only, through the harness contract in `docs/target-contract.md`
-- the MCP client uses the `initialize` handshake with protocol version `2024-11-05`. The current MCP revision, 2026-07-28, replaced that handshake with per-request version negotiation, so a server that implements only 2026-07-28 cannot be tested yet; servers that also accept the handshake-based revisions can
+- target mode speaks both MCP eras on stdio: 2026-07-28 (per-request `_meta`, found with `server/discover`) and the `initialize`-based revisions; multi round-trip results (`input_required`) are not supported
 - the GitHub Action does not support Windows runners (it uses a POSIX virtualenv layout)
 - each probe is a single tool call; multi-turn probes such as `crescendo-001` send all turns at once
 - no MCP HTTP adapter yet

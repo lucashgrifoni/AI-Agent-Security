@@ -138,6 +138,8 @@ def _run_against_target(
         raise typer.Exit(code=2)
     try:
         with McpAgentTarget.start(config) as agent:
+            session = agent.session
+            typer.echo(f"Target speaks MCP {session.protocol_version} ({session.era}).")
             return run_probes_against(probes, agent.observe)
     except (
         McpProtocolError,
