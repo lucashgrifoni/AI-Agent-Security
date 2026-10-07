@@ -30,6 +30,18 @@ inputs:
     description: "Where to write the SARIF report."
     required: false
     default: "aiasec.sarif"
+  categories:
+    description: "Only probes in these categories (comma-separated). Empty means every category."
+    required: false
+    default: ""
+  min-severity:
+    description: "Only probes at or above this severity: low, medium, high or critical. Empty means all."
+    required: false
+    default: ""
+  probe-ids:
+    description: "Only these probe ids (comma-separated). Empty means every probe."
+    required: false
+    default: ""
   max-critical:
     description: "Maximum tolerated critical findings. Empty means unlimited."
     required: false
@@ -88,9 +100,15 @@ runs:
         AIASEC_TARGET: ${{ inputs.target }}
         AIASEC_PROBES: ${{ inputs.probes }}
         AIASEC_SARIF: ${{ inputs.sarif-file }}
+        AIASEC_CATEGORIES: ${{ inputs.categories }}
+        AIASEC_MIN_SEVERITY: ${{ inputs.min-severity }}
+        AIASEC_PROBE_IDS: ${{ inputs.probe-ids }}
       run: |
         args=(run --target "$AIASEC_TARGET" --execute --output "$AIASEC_SARIF" --format sarif)
         if [ -n "$AIASEC_PROBES" ]; then args+=(--probes "$AIASEC_PROBES"); fi
+        if [ -n "$AIASEC_CATEGORIES" ]; then args+=(--category "$AIASEC_CATEGORIES"); fi
+        if [ -n "$AIASEC_MIN_SEVERITY" ]; then args+=(--min-severity "$AIASEC_MIN_SEVERITY"); fi
+        if [ -n "$AIASEC_PROBE_IDS" ]; then args+=(--probe-id "$AIASEC_PROBE_IDS"); fi
         # A report left by an earlier run must never stand in for this one.
         rm -f -- "$AIASEC_SARIF"
         set +e
@@ -118,8 +136,12 @@ runs:
         MAX_HIGH: ${{ inputs.max-high }}
         MAX_MEDIUM: ${{ inputs.max-medium }}
         MAX_LOW: ${{ inputs.max-low }}
+        AIASEC_SELECTION: ${{ inputs.categories }}${{ inputs.min-severity }}${{ inputs.probe-ids }}
       run: |
         args=(gate --report "$AIASEC_SARIF")
+        # The gate refuses a report of a probe subset unless told the subset is intended;
+        # the selection inputs of this same workflow are that intent.
+        if [ -n "$AIASEC_SELECTION" ]; then args+=(--allow-partial); fi
         if [ -n "$MAX_CRITICAL" ]; then args+=(--max-critical "$MAX_CRITICAL"); fi
         if [ -n "$MAX_HIGH" ]; then args+=(--max-high "$MAX_HIGH"); fi
         if [ -n "$MAX_MEDIUM" ]; then args+=(--max-medium "$MAX_MEDIUM"); fi
