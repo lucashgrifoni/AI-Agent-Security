@@ -213,7 +213,11 @@ returned them, followed by one result each saying aiasec did not run the tool, s
 model sees the conversation it actually had. An Anthropic reply goes back exactly as it
 came, thinking blocks included, which the API requires whenever a tool result follows. The Anthropic API combines consecutive
 assistant messages, so when a probe's own `assistant` input comes right before a reply
-that has only tool calls, Claude reads the two as one turn.
+that has only tool calls, Claude reads the two as one turn. A probe turn that ends with
+an `assistant` input reaches Anthropic as a prefill, which Claude continues instead of
+answering: Claude Sonnet 4.5, Claude Haiku 4.5 and older models accept it, while Claude
+Sonnet 4.6, Sonnet 5 and Sonnet 5.5 reject it with HTTP 400, and the run fails with that
+reason.
 
 Probe inputs reach the model like this:
 

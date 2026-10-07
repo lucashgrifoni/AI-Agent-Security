@@ -216,6 +216,14 @@ class ModelAgentTarget:
         )
         if status != 200:
             reason = _reason(payload, self._api_key)
+            # A turn that ends with the probe's assistant input reaches Anthropic as a
+            # prefill, which older Claude models accept and newer ones reject.
+            last = transcript.entries[-1] if transcript.entries else {}
+            if provider == "anthropic" and last.get("kind") == "assistant":
+                reason += (
+                    " (this probe turn ends with an assistant input, which Anthropic reads"
+                    " as a prefill; end the turn with a user input for this model)"
+                )
             raise ModelTargetError(f"The {provider} API answered HTTP {status}{reason}")
         try:
             reply = json.loads(payload)
