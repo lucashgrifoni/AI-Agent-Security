@@ -172,7 +172,6 @@ jobs:
             deeproxy.snyk.io:443
             downloads.snyk.io:443
             github.com:443
-            registry.npmjs.org:443
             release-assets.githubusercontent.com:443
 
       - name: Checkout
@@ -180,17 +179,14 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setup Node.js
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
-        with:
-          node-version: "20"
-
       - name: Install Snyk CLI
-        # npm ci installs exactly what .github/snyk/package-lock.json records, checking
-        # every package's integrity hash.
-        run: |
-          npm ci --prefix .github/snyk --no-audit --no-fund
-          echo "$GITHUB_WORKSPACE/.github/snyk/node_modules/.bin" >> "$GITHUB_PATH"
+        # Snyk's setup action, pinned by commit, installs this one CLI version and fails
+        # unless the binary matches the SHA-256 Snyk publishes for it. The npm package
+        # would also pull in its installer's dependencies, one of which has an advisory
+        # with no fixed release (GHSA-hp3w-g68c-fv3c).
+        uses: snyk/actions/setup@9adf32b1121593767fc3c057af55b55db032dc04 # v1.0.0
+        with:
+          snyk-version: v1.1306.3
 
       - name: Run Snyk Code
         env:

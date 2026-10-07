@@ -1,8 +1,0 @@
-{
-  "name": "aiasec-snyk-cli",
-  "private": true,
-  "description": "Pins the Snyk CLI used by .github/workflows/security.yml; installed with npm ci so every package is checked against package-lock.json.",
-  "dependencies": {
-    "snyk": "1.1306.3"
-  }
-}

@@ -10,7 +10,8 @@ All notable changes to this project will be documented in this file.
   the `pyproject.toml` ranges allowed at run time.
 - The CI, security and release workflows install their tools from hash-locked files
   in `.github/requirements` and build without downloading a build backend; the Snyk
-  CLI installs with `npm ci` from a lockfile. Dependabot refreshes all of them.
+  CLI comes from Snyk's setup action pinned by commit, at a fixed version whose
+  checksum it verifies. Dependabot refreshes the locks and the action pin.
 
 ## 0.2.0 - 2026-10-07
 
