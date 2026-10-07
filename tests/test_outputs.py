@@ -31,3 +31,18 @@ def test_sarif_report_contains_failed_result() -> None:
     assert report["runs"][0]["results"][0]["ruleId"] == "direct-injection-001"
     assert report["runs"][0]["results"][0]["level"] == "error"
 
+
+
+def test_sarif_carries_the_owasp_mcp_tag_when_the_probe_declares_one() -> None:
+    probe = load_probe_file(
+        Path("src/aiasec/probes/mcp-specific/tool-description-poisoning-001.yaml")
+    )
+    result = evaluate_probe(
+        probe, TargetObservation(assistant_final_response="TOOLPOISON-ACK")
+    )
+
+    report = json.loads(render_sarif_json([result]))
+
+    run = report["runs"][0]
+    assert run["results"][0]["properties"]["owasp_mcp"] == "MCP03"
+    assert run["tool"]["driver"]["rules"][0]["properties"]["owasp_mcp"] == "MCP03"

@@ -6,7 +6,7 @@ from collections import Counter
 from collections.abc import Sequence
 
 from aiasec.core.verdict import ProbeRunResult
-from aiasec.outputs.sarif import MCP_TARGET_MODE, SINGLE_OBSERVATION_MODE
+from aiasec.outputs.sarif import HTTP_TARGET_MODE, MCP_TARGET_MODE, SINGLE_OBSERVATION_MODE
 
 MODE_EXPLANATIONS = {
     SINGLE_OBSERVATION_MODE: (
@@ -14,8 +14,12 @@ MODE_EXPLANATIONS = {
         "that observation did not trigger it, not that its attack was sent to a target."
     ),
     MCP_TARGET_MODE: (
-        "Each probe's inputs were sent to the target over MCP stdio, and each probe was scored\n"
-        "against the response and tool calls the target returned for it."
+        "Each probe's inputs were sent to the target over MCP stdio, one call per turn, and each\n"
+        "probe was scored against the final reply and the tool calls the target reported."
+    ),
+    HTTP_TARGET_MODE: (
+        "Each probe's inputs were POSTed to the target over HTTP, one request per turn, and each\n"
+        "probe was scored against the final reply and the tool calls the target reported."
     ),
 }
 

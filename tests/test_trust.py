@@ -19,6 +19,7 @@ from aiasec.core.gate import count_executed_probes
 from aiasec.core.probe import load_probe_file, load_probes_from_dir
 
 DIRECT_INJECTION = Path("src/aiasec/probes/prompt-injection/direct-injection-001.yaml")
+BUNDLED = len(load_probes_from_dir(Path("src/aiasec/probes")))
 
 
 def _run(*args: str):
@@ -77,17 +78,17 @@ def test_clean_run_passes_the_gate_and_reports_probe_count(tmp_path) -> None:
     assert result.exit_code == 0
     decision = json.loads(result.stdout)
     assert decision["verdict"] == "PASS"
-    assert decision["probesExecuted"] == 10
+    assert decision["probesExecuted"] == BUNDLED
 
 
 def test_sarif_records_executed_and_failed_probe_counts(tmp_path) -> None:
     run = _sarif_report(tmp_path, "COMPROMISED")["runs"][0]
 
-    assert run["properties"]["aiasec"]["probesExecuted"] == 10
+    assert run["properties"]["aiasec"]["probesExecuted"] == BUNDLED
     assert run["properties"]["aiasec"]["probesFailed"] == 1
     assert run["properties"]["aiasec"]["observationMode"] == "single-observation"
     assert run["invocations"] == [{"executionSuccessful": True}]
-    assert count_executed_probes({"runs": [run]}) == 10
+    assert count_executed_probes({"runs": [run]}) == BUNDLED
 
 
 def test_every_sarif_result_has_a_location_and_a_stable_fingerprint(tmp_path) -> None:

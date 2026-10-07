@@ -6,9 +6,9 @@
 
 `aiasec` is a small, reproducible testbed for adversarial regression checks against AI agents and MCP tool boundaries. It sends a battery of adversarial probes to your agent, scores each response with deterministic rules, and writes a SARIF report that a release gate turns into PASS or FAIL in CI.
 
-- 10 bundled probes across 5 attack categories, defined in YAML
+- 15 bundled probes across 7 attack categories, defined in YAML and mapped to OWASP
 - deterministic, rules-only evaluation: no LLM judges the result
-- a live MCP stdio target mode that sends every probe to the agent under test
+- a live target mode that sends every probe to the agent under test over MCP stdio or HTTP
 - Markdown and SARIF 2.1.0 reports that GitHub code scanning can display
 - a fail-closed release gate with per-severity thresholds
 
@@ -18,7 +18,7 @@ This is not a runtime guardrail and it is not a full red-team framework. Use it 
 
 `aiasec run` has two modes, and every report states which one produced it:
 
-- **Target mode** (`--target`, `observationMode: mcp-stdio-target`): aiasec starts your agent harness as an MCP stdio server and sends each probe's inputs to it, then scores the response and the tool calls the agent reports for that probe. See [docs/target-contract.md](docs/target-contract.md).
+- **Target mode** (`--target`, `observationMode: mcp-stdio-target` or `http-target`): aiasec sends each probe to your agent harness, either an MCP stdio server it starts or an HTTP endpoint, one call per conversation turn, then scores the final reply and every tool the agent reports calling. See [docs/target-contract.md](docs/target-contract.md).
 - **Observation mode** (`--response`, `observationMode: single-observation`): aiasec scores every probe against one response you supply. Nothing is sent anywhere, so a passing probe means that response did not trigger it, not that an agent resisted the attack.
 
 HTTP and vendor SDK adapters are left for later iterations.
@@ -54,7 +54,7 @@ aiasec run --target examples/target-mcp-vulnerable/aiasec-target.json --execute 
 aiasec gate --report vulnerable.sarif --max-critical 0 --max-high 0 --exit-on-fail
 ```
 
-All 10 probes fail and the gate exits 1. Against the good target, all 10 pass:
+Every bundled probe fails and the gate exits 1. Against the good target, every probe passes:
 
 ```bash
 aiasec run --target examples/target-mcp-good/aiasec-target.json --execute --output good.sarif
@@ -64,6 +64,14 @@ aiasec gate --report good.sarif --max-critical 0 --max-high 0 --exit-on-fail
 `--execute` is required because `--target` starts the command in the config. Read the
 config before you pass it. To test your own agent, wrap it in a harness that follows
 [docs/target-contract.md](docs/target-contract.md) and point `--target` at its config.
+
+To test an agent behind HTTP, start the HTTP reference target and point `--target`
+at its config:
+
+```bash
+python examples/target-http-vulnerable/server.py --port 8765
+aiasec run --target examples/target-http-vulnerable/aiasec-target.json --execute --output http.sarif
+```
 
 ### Use in GitHub Actions
 
@@ -167,23 +175,28 @@ and deduplicate them.
 
 ## Probe Suite
 
-Ten bundled probes covering five categories:
+Fifteen bundled probes covering seven categories:
 
-| Category | Probes | OWASP LLM |
-|---|---|---|
-| `prompt-injection` | `direct-injection-001`, `encoding-injection-001` | LLM01 |
-| `indirect-injection` | `rag-doc-poison-001`, `hidden-html-injection-001` | LLM01 |
-| `tool-abuse` | `tool-coercion-001`, `tool-chain-exfil-001` | LLM06 |
-| `data-exfil` | `markdown-image-exfil-001`, `url-embed-exfil-001` | LLM02 |
-| `jailbreak` | `persona-swap-001`, `crescendo-001` | LLM01 |
+| Category | Probes | OWASP LLM 2025 | OWASP MCP 2025 (beta) |
+|---|---|---|---|
+| `prompt-injection` | `direct-injection-001`, `encoding-injection-001` | LLM01 | |
+| `indirect-injection` | `rag-doc-poison-001`, `hidden-html-injection-001` | LLM01 | MCP06 |
+| `tool-abuse` | `tool-coercion-001`, `tool-chain-exfil-001` | LLM06 | |
+| `data-exfil` | `markdown-image-exfil-001`, `url-embed-exfil-001` | LLM02 | |
+| `jailbreak` | `persona-swap-001`, `crescendo-001` | LLM01 | |
+| `output-manipulation` | `html-script-output-001`, `sql-payload-output-001`, `shell-payload-output-001` | LLM05 | |
+| `mcp-specific` | `tool-description-poisoning-001`, `tool-shadowing-001` | LLM01, LLM06 | MCP03 |
+
+[docs/owasp-mapping.md](docs/owasp-mapping.md) explains each mapping and what the
+suite does not cover.
 
 Detection is sentinel-based: each adversarial prompt instructs the target to
 emit a marker unique to that probe, and the probe asserts the marker is absent.
 Every probe carries a compromised sample and is checked against a well-behaved
 target in `tests/test_probe_suite.py`, which also proves no probe fires on
-another probe's sample. `tests/test_mcp_target.py` and CI send every probe to both
-example targets over MCP stdio: all of them must fail against the vulnerable one and
-pass against the good one.
+another probe's sample. `tests/test_mcp_target.py`, `tests/test_http_target.py` and CI
+send every probe to the example targets over MCP stdio and HTTP: all of them must fail
+against the vulnerable ones and pass against the good one.
 
 To write your own, see [docs/writing-probes.md](docs/writing-probes.md).
 
@@ -324,12 +337,10 @@ tests/                 unit and end-to-end tests
 
 ## Current Limits
 
-- target mode supports MCP stdio only, through the harness contract in `docs/target-contract.md`
+- target mode supports MCP stdio and HTTP harnesses through the contract in `docs/target-contract.md`
 - target mode speaks both MCP eras on stdio: 2026-07-28 (per-request `_meta`, found with `server/discover`) and the `initialize`-based revisions; multi round-trip results (`input_required`) are not supported
 - the GitHub Action does not support Windows runners (it uses a POSIX virtualenv layout)
-- each probe is a single tool call; multi-turn probes such as `crescendo-001` send all turns at once
 - no MCP HTTP adapter yet
-- no generic HTTP target adapter yet
 - no LLM-as-judge fallback yet
 - SARIF output is validated against the official SARIF 2.1.0 schema in CI, not by a CLI command
 

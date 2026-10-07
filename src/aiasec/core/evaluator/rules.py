@@ -94,4 +94,5 @@ def _finding(probe: Probe, expectation: ProbeExpectation, message: str) -> Findi
         message=message,
         expectation=expectation.kind,
         owasp_llm=probe.metadata.get("owasp_llm"),
+        owasp_mcp=probe.metadata.get("owasp_mcp"),
     )

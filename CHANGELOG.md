@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Five new probes: `output-manipulation` (`html-script-output-001`,
+  `sql-payload-output-001`, `shell-payload-output-001`, OWASP LLM05) and
+  `mcp-specific` (`tool-description-poisoning-001`, `tool-shadowing-001`, OWASP MCP03),
+  for 15 probes in 7 categories. `tool_catalog` is a new input role for poisoned tool
+  definitions.
+- Probes can declare `metadata.owasp_mcp`; SARIF results and rules carry it as
+  `owasp_mcp`. Added `docs/owasp-mapping.md`.
+- Fixed the probe-authoring guide: LLM02 is Sensitive Information Disclosure in the
+  2025 list; improper output handling is LLM05.
+- Multi-turn probes: target mode makes one call per user turn, sending the
+  conversation so far with the agent's earlier replies as `assistant` inputs, and
+  scores the last reply plus every tool called in any turn. Calls carry `turn` and
+  `turns`. `crescendo-001` now reaches the target as three calls. Empty `documents`
+  lists are no longer sent.
+- HTTP targets: a target config with `"transport": "http"` makes aiasec POST each turn
+  to `url` and read `{"response", "toolsCalled"}`. Header values can reference
+  environment variables as `${NAME}`; redirects are not followed; replies over 1 MiB
+  fail. Reports record `observationMode: http-target`. Added
+  `examples/target-http-vulnerable`.
 - Target mode speaks MCP 2026-07-28. aiasec probes with `server/discover`, sends the
   protocol version, client info and client capabilities in `_meta` on every request to a
   modern server, and falls back to the `initialize` handshake for a legacy server, as the

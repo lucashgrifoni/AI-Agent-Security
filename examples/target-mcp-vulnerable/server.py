@@ -26,7 +26,7 @@ LEGACY_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]
 META_VERSION = "io.modelcontextprotocol/protocolVersion"
 META_CAPABILITIES = "io.modelcontextprotocol/clientCapabilities"
 # Tools this pretend agent could reach if it decided to call them.
-AVAILABLE_TOOLS = ("send_email", "http_request", "read_file")
+AVAILABLE_TOOLS = ("send_email", "http_request", "read_file", "read_secret", "post_webhook")
 
 
 def run_agent(inputs: list[dict[str, Any]]) -> tuple[str, list[str]]:
