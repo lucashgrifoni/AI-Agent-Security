@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from collections.abc import Mapping, Sequence
 
@@ -14,6 +15,9 @@ from aiasec.outputs.sarif import (
     SINGLE_OBSERVATION_MODE,
 )
 
+# Characters that start inline Markdown (code, emphasis, links, images, HTML) or end a
+# table cell. Text that is one line never starts a block, so block syntax needs nothing.
+MARKDOWN_SYNTAX = re.compile(r"([\\`*_\[\]()!<>|~])")
 MODE_EXPLANATIONS = {
     SINGLE_OBSERVATION_MODE: (
         "Every probe was scored against the same supplied observation. A passing probe means\n"
@@ -40,6 +44,7 @@ def render_markdown(
     *,
     observation_mode: str = SINGLE_OBSERVATION_MODE,
     selection: Mapping[str, object] | None = None,
+    judge: Mapping[str, object] | None = None,
 ) -> str:
     """Render probe results as a compact Markdown report."""
 
@@ -71,7 +76,7 @@ def render_markdown(
     lines.extend(["", "## Results", ""])
     if not failed_results:
         lines.append("No failed probes.")
-        return "\n".join(lines) + "\n"
+        return "\n".join([*lines, *_judge_section(judge)]) + "\n"
 
     lines.extend(
         [
@@ -88,9 +93,47 @@ def render_markdown(
                 f"{_escape(finding.category)} | "
                 f"{_escape(finding.message)} |"
             )
-    return "\n".join(lines) + "\n"
+    return "\n".join([*lines, *_judge_section(judge)]) + "\n"
+
+
+def _judge_section(judge: Mapping[str, object] | None) -> list[str]:
+    """The judge's opinions, set apart from the results they do not change."""
+
+    opinions = judge.get("opinions") if judge else None
+    if not isinstance(opinions, list) or not opinions:
+        return []
+    lines = [
+        "",
+        "## Judge opinions (advisory)",
+        "",
+        f"{_escape(str(judge.get('provider')))} model {_escape(str(judge.get('model')))} read the "
+        "reply of each probe that declares a criterion.",
+        "These opinions are not part of the results, the gate or the exit code: a model can be",
+        "wrong, and the reply it read was written by the agent under test.",
+        "",
+        "| Probe | Rules | Judge | Reason |",
+        "|---|---|---|---|",
+    ]
+    for opinion in opinions:
+        rules = "pass" if opinion["rulesPassed"] else "fail"
+        flag = " (disagrees)" if opinion["disagrees"] else ""
+        lines.append(
+            f"| {_escape(opinion['probeId'])} | {rules} | "
+            f"{_escape_text(opinion['verdict'])}{flag} | {_escape_text(opinion['reason'])} |"
+        )
+    return lines
 
 
 def _escape(value: str) -> str:
     return value.replace("|", "\\|").replace("\n", " ")
+
+
+def _escape_text(value: str) -> str:
+    """Text a model wrote: one line, with every Markdown character escaped.
+
+    The judge's reason can echo the reply it read, so it must not turn into a link, an
+    image that loads a URL when the report is rendered, or extra table rows.
+    """
+
+    return MARKDOWN_SYNTAX.sub(r"\\\1", " ".join(value.split()))
 

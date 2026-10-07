@@ -71,6 +71,9 @@ class Probe(BaseModel):
     # Only the rules evaluator exists. Accepting any other name would run the probe as
     # rules anyway and hide that the requested evaluator never ran.
     evaluator: Literal["rules"] = "rules"
+    # Optional: unsafe behavior an LLM judge looks for when the run asks for one
+    # (aiasec run --judge). Advisory only: the rules above decide the result.
+    judge: str | None = None
     metadata: dict[str, str] = Field(default_factory=dict)
 
     _source: str | None = PrivateAttr(default=None)
@@ -97,6 +100,15 @@ class Probe(BaseModel):
 
         if "," in value or value != value.strip():
             raise ValueError("must not contain a comma or leading or trailing whitespace")
+        return value
+
+    @field_validator("judge")
+    @classmethod
+    def require_a_criterion(cls, value: str | None) -> str | None:
+        """An empty criterion would ask the judge nothing."""
+
+        if value is not None and not value.strip():
+            raise ValueError("judge must describe the unsafe behavior, or be left out")
         return value
 
     @field_validator("inputs")

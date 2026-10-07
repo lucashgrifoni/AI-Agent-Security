@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
@@ -27,6 +28,7 @@ from aiasec.core.probe import Probe, load_probes_from_dir
 from aiasec.core.runner import run_probes, run_probes_against
 from aiasec.core.verdict import ProbeRunResult
 from aiasec.httptarget import HttpAgentTarget, HttpTargetConfig, HttpTargetError
+from aiasec.judge import JudgeConfigError, Opinion, judge_results, load_judge
 from aiasec.mcp.config import McpStdioConfig, load_stdio_config
 from aiasec.mcp.fixtures import load_jsonrpc_fixture
 from aiasec.mcp.stdio import McpProtocolError, McpRemoteError, McpStdioAdapter
@@ -281,11 +283,24 @@ def _load_target_config(target: Path) -> TargetConfig:
     return McpStdioConfig.model_validate(raw)
 
 
+def _recording(
+    observe: Callable[[Probe], TargetObservation], kept: dict[str, TargetObservation]
+) -> Callable[[Probe], TargetObservation]:
+    """Keep each probe's observation for the judge."""
+
+    def observe_and_keep(probe: Probe) -> TargetObservation:
+        kept[probe.id] = observation = observe(probe)
+        return observation
+
+    return observe_and_keep
+
+
 def _run_against_target(
     probes: list[Probe],
     target: Path,
     *,
     execute: bool,
+    kept: dict[str, TargetObservation],
 ) -> tuple[list[ProbeRunResult], str]:
     try:
         config = _load_target_config(target)
@@ -313,14 +328,15 @@ def _run_against_target(
         if isinstance(config, HttpTargetConfig):
             with HttpAgentTarget.start(config) as agent:
                 typer.echo(f"Target is {agent.label}.")
-                return run_probes_against(probes, agent.observe), HTTP_TARGET_MODE
+                return run_probes_against(probes, _recording(agent.observe, kept)), HTTP_TARGET_MODE
         if isinstance(config, ModelTargetConfig):
             with ModelAgentTarget.start(config) as model:
                 typer.echo(f"Target is the {model.label}.")
-                return run_probes_against(probes, model.observe), MODEL_API_TARGET_MODE
+                observe = _recording(model.observe, kept)
+                return run_probes_against(probes, observe), MODEL_API_TARGET_MODE
         with McpAgentTarget.start(config) as agent:
             typer.echo(f"Target speaks {agent.label}.")
-            return run_probes_against(probes, agent.observe), MCP_TARGET_MODE
+            return run_probes_against(probes, _recording(agent.observe, kept)), MCP_TARGET_MODE
     except (
         HttpTargetError,
         McpProtocolError,
@@ -406,6 +422,14 @@ def run(
     category: CategoryOption = None,
     min_severity: MinSeverityOption = None,
     probe_id: ProbeIdOption = None,
+    judge_config: Annotated[
+        Path | None,
+        typer.Option(
+            "--judge",
+            help="Model API config of an LLM judge for probes that declare a criterion. "
+            "Advisory: the judge never changes results, the gate or the exit code.",
+        ),
+    ] = None,
 ) -> None:
     """Run probes against a live MCP target or a supplied observation."""
 
@@ -430,9 +454,14 @@ def run(
         )
         raise typer.Exit(code=2)
     probes, selection = _select_probes(probes, category, min_severity, probe_id)
+    # Start the judge first: a missing key must not surface after the target run.
+    judge = _start_judge(judge_config) if judge_config is not None else None
 
+    kept: dict[str, TargetObservation] = {}
     if target is not None:
-        results, observation_mode = _run_against_target(probes, target, execute=execute)
+        results, observation_mode = _run_against_target(
+            probes, target, execute=execute, kept=kept
+        )
     else:
         observation = TargetObservation(
             assistant_final_response=_read_response(response, response_file),
@@ -440,7 +469,13 @@ def run(
             tool_calls=_read_tool_calls(tool_calls_file),
         )
         results = run_probes(probes, observation)
+        kept = {probe.id: observation for probe in probes}
         observation_mode = SINGLE_OBSERVATION_MODE
+    opinions = None
+    if judge is not None:
+        asked = sum(1 for probe in probes if probe.judge)
+        typer.echo(f"Asking the judge, the {judge.label}, about {asked} probe(s).")
+        opinions = _opinions(judge, judge_results(results, kept, judge))
 
     renderers = {
         OutputFormat.sarif: render_sarif_json,
@@ -448,7 +483,9 @@ def run(
         OutputFormat.markdown: render_markdown,
     }
     renderer = renderers[_resolve_format(output, output_format)]
-    report = renderer(results, observation_mode=observation_mode, selection=selection)
+    report = renderer(
+        results, observation_mode=observation_mode, selection=selection, judge=opinions
+    )
 
     try:
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -462,6 +499,45 @@ def run(
     typer.echo(f"Wrote {output} with {failed} failed probe(s).")
     if failed:
         raise typer.Exit(code=1)
+
+
+def _start_judge(judge_config: Path) -> ModelAgentTarget:
+    try:
+        config = ModelTargetConfig.model_validate(
+            json.loads(judge_config.read_text(encoding="utf-8"))
+        )
+        return load_judge(config)
+    except ValidationError as exc:
+        typer.echo(f"Invalid judge config {judge_config}:\n{_validation_message(exc)}", err=True)
+        raise typer.Exit(code=2) from exc
+    except (OSError, ValueError, HttpTargetError, JudgeConfigError) as exc:
+        typer.echo(f"Invalid judge config {judge_config}: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+
+
+def _opinions(judge: ModelAgentTarget, opinions: list[Opinion]) -> dict[str, object]:
+    disagreements = sum(1 for opinion in opinions if opinion.disagrees)
+    errors = sum(1 for opinion in opinions if opinion.verdict == "error")
+    typer.echo(
+        f"The judge gave {len(opinions)} opinion(s); {disagreements} disagree with the rules"
+        + (f", {errors} could not be obtained" if errors else "")
+        + ". They do not change the results."
+    )
+    return {
+        "provider": judge.provider,
+        "model": judge.model,
+        "opinions": [
+            {
+                "probeId": opinion.probe_id,
+                "criterion": opinion.criterion,
+                "rulesPassed": opinion.rules_passed,
+                "verdict": opinion.verdict,
+                "reason": opinion.reason,
+                "disagrees": opinion.disagrees,
+            }
+            for opinion in opinions
+        ],
+    }
 
 
 @app.command()

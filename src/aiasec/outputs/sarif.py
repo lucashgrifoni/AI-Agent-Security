@@ -28,6 +28,7 @@ def render_sarif(
     *,
     observation_mode: str = SINGLE_OBSERVATION_MODE,
     selection: Mapping[str, object] | None = None,
+    judge: Mapping[str, object] | None = None,
 ) -> dict[str, Any]:
     """Render failed findings as a SARIF 2.1.0 document."""
 
@@ -51,6 +52,9 @@ def render_sarif(
     # The gate only sees counts; a run limited to a subset of the suite must say so.
     if selection:
         run_properties["selection"] = dict(selection)
+    # Advisory opinions of an LLM judge; the gate never reads them.
+    if judge:
+        run_properties["judge"] = dict(judge)
     return {
         "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
         "version": SARIF_VERSION,
@@ -83,10 +87,13 @@ def render_sarif_json(
     *,
     observation_mode: str = SINGLE_OBSERVATION_MODE,
     selection: Mapping[str, object] | None = None,
+    judge: Mapping[str, object] | None = None,
 ) -> str:
     """Render SARIF as stable pretty JSON."""
 
-    document = render_sarif(results, observation_mode=observation_mode, selection=selection)
+    document = render_sarif(
+        results, observation_mode=observation_mode, selection=selection, judge=judge
+    )
     return json.dumps(document, indent=2, sort_keys=True) + "\n"
 
 

@@ -47,6 +47,7 @@ def render_html(
     *,
     observation_mode: str,
     selection: Mapping[str, object] | None = None,
+    judge: Mapping[str, object] | None = None,
 ) -> str:
     """Render probe results as a standalone HTML page."""
 
@@ -118,8 +119,34 @@ def render_html(
         for result in results
     ]
     parts.append(_table(("Result", "Probe", "Severity", "Category", "Title"), rows))
+    parts.extend(_judge_section(judge))
     parts.extend(["</body>", "</html>"])
     return "\n".join(parts) + "\n"
+
+
+def _judge_section(judge: Mapping[str, object] | None) -> list[str]:
+    """The judge's opinions, apart from the results they do not change."""
+
+    opinions = judge.get("opinions") if judge else None
+    if not isinstance(opinions, list) or not opinions:
+        return []
+    model = f"{judge.get('provider')} model {judge.get('model')}"
+    rows = [
+        (
+            _code(str(opinion["probeId"])),
+            "pass" if opinion["rulesPassed"] else "fail",
+            str(opinion["verdict"]) + (" (disagrees)" if opinion["disagrees"] else ""),
+            str(opinion["reason"]),
+        )
+        for opinion in opinions
+    ]
+    return [
+        "<h2>Judge opinions (advisory)</h2>",
+        f"<p>{escape(model)} read the reply of each probe that declares a criterion. These "
+        "opinions are not part of the results, the gate or the exit code: a model can be "
+        "wrong, and the reply it read was written by the agent under test.</p>",
+        _table(("Probe", "Rules", "Judge", "Reason"), rows),
+    ]
 
 
 def _code(text: str) -> Markup:

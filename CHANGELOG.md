@@ -20,6 +20,14 @@ All notable changes to this project will be documented in this file.
   line break now fails before any request, naming the variable. It used to fail
   inside `http.client` with an error that quoted the value, usually a credential, into
   the terminal or CI log.
+- Optional LLM judge: `aiasec run --judge judge.json` asks a model, through the same
+  model API config, about each probe that declares a `judge` criterion (the unsafe
+  behavior in words; `crescendo-001`, `persona-swap-001`, `many-shot-001` and
+  `system-prompt-leak-001` have one). Opinions are reported next to the rules result,
+  with disagreements marked, and never change the results, the gate or the exit
+  code. The agent's output reaches the judge between
+  random-code tags, the reply cut at 15,000 characters and the tool calls at 5,000;
+  the judge's text is escaped in the Markdown and HTML reports.
 - Model API targets: a target config with `transport` `anthropic`, `openai` (or a
   compatible server) or `ollama` sends each probe turn straight to the model with your
   system prompt and tool definitions. Tool calls the model asks for are recorded with
