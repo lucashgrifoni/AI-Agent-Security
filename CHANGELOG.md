@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+- `aiasec run --tool-calls-file calls.json` reads observed tool calls, with their
+  arguments, in the `toolsCalled` shape of the target contract. With `--tools-called`
+  (names only) the two argument probes can only report that the arguments were not
+  reported. The file cannot be combined with `--tools-called` or `--target`.
+- An invalid target config, or `mcp tools list --config`, lists each invalid field
+  with its reason on its own line. The message no longer carries pydantic's
+  documentation links or the rejected value, which could be a header or env secret.
+
 ## 0.2.0 - 2026-10-07
 
 - `timeoutSeconds` now bounds each request as a whole. An MCP target that kept sending
