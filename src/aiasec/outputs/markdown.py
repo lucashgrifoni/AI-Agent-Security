@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Mapping, Sequence
 
+from aiasec.core.selection import describe_selection
 from aiasec.core.verdict import ProbeRunResult
 from aiasec.outputs.sarif import HTTP_TARGET_MODE, MCP_TARGET_MODE, SINGLE_OBSERVATION_MODE
 
@@ -46,7 +47,7 @@ def render_markdown(
         f"- Failed probes: {len(failed_results)}",
         f"- Findings: {finding_count}",
         f"- Observation mode: {observation_mode}",
-        *([f"- Selection: {_describe(selection)}"] if selection else []),
+        *([f"- Selection: {_escape(describe_selection(selection))}"] if selection else []),
         "",
         MODE_EXPLANATIONS[observation_mode],
         "",
@@ -78,17 +79,6 @@ def render_markdown(
                 f"{_escape(finding.message)} |"
             )
     return "\n".join(lines) + "\n"
-
-
-def _describe(selection: Mapping[str, object]) -> str:
-    labels = {"categories": "categories", "minSeverity": "min severity", "probeIds": "probe ids"}
-    parts = []
-    for key, label in labels.items():
-        value = selection.get(key)
-        if value:
-            text = ", ".join(value) if isinstance(value, list) else str(value)
-            parts.append(f"{label} {_escape(text)}")
-    return "; ".join(parts)
 
 
 def _escape(value: str) -> str:
