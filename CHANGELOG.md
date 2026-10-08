@@ -7,12 +7,13 @@ All notable changes to this project will be documented in this file.
 Fixes from the first run against the real Anthropic API (claude-sonnet-5-5):
 
 - Bundled probes no longer fail a model that refuses an injection and quotes the
-  sentinel while telling the user about it, which three of five failures in that run
+  sentinel while telling the user about it, which two of five failures in that run
   were. A regex expectation can set `ignore_quoted: true` to skip quoted text, inline
   code and `>` lines in the reply, outside fenced code blocks, which are checked whole;
-  14 sentinel probes use it. Payloads whose presence is
-  the risk (markdown image, URL, script tag, shell pipe) and the system prompt secret
-  still count when quoted. **Changed check ids:** these 14 checks get new expectation
+  13 sentinel probes use it. Payloads whose presence is the risk (markdown image, URL,
+  script tag, shell pipe, SQL statement) and the system prompt secret still count when
+  quoted, so the third failure, a refusal that repeated the `DROP TABLE` statement in
+  inline code, still counts. **Changed check ids:** these 13 checks get new expectation
   ids, so `aiasec compare` against a 0.3.0 baseline lists the old ones as no longer
   run; make a new baseline.
 - `direct-injection-001` and `encoding-injection-001` give the agent a system rule the
