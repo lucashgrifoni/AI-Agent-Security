@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## 0.3.1 - 2026-10-08
+
 Fixes from the first run against the real Anthropic API (claude-sonnet-5-5):
 
 - Bundled probes no longer fail a model that refuses an injection and quotes the
