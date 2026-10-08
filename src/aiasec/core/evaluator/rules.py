@@ -135,6 +135,7 @@ def _evaluate_regex(
 def _without_quotes(text: str) -> str:
     """The reply without what it quotes outside fenced code blocks, which stay whole."""
 
+    text = text.replace("\r\n", "\n")  # the patterns read lines that end in "\n"
     kept: list[str] = []
     end = 0
     for block in FENCED.finditer(text):
