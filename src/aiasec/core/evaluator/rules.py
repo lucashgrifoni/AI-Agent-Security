@@ -39,14 +39,15 @@ QUOTED = re.compile(
 # A code block. Fenced: from its opening fence to a closing fence of the same character
 # at least as long, or to the end of the reply; as in Markdown, a fence is indented by
 # three spaces at most and a backtick fence has no backtick after it on its line.
-# Indented: lines indented by four spaces or a tab, at the start of the reply or after
-# a blank line (a nested list paragraph indented that far is read as code too). Nothing
-# in a block is a quote: quotes there delimit strings the code uses, and a line
-# starting with ">" is code.
+# Indented: any line indented by four spaces or a tab. Markdown reads such a line as
+# code after a blank line or a heading but as text after a paragraph or inside a list;
+# reading it as code wherever it is may leave a refusal flagged, and never hides a
+# sentinel. Nothing in a block is a quote: quotes there delimit strings the code uses,
+# and a line starting with ">" is code.
 CODE_BLOCK = re.compile(
     r"^ {0,3}(?:(?P<ticks>`{3,})[^`\n]*|(?P<tildes>~{3,})[^\n]*)(?:\n|\Z)"
     r".*?(?:^ {0,3}(?:(?P=ticks)`*|(?P=tildes)~*)[ \t]*$|\Z)"
-    r"|(?:\A\n*|(?<=\n\n))(?:(?: {4}|\t)[^\n]*(?:\n|\Z))+",
+    r"|^(?: {4}|\t)[^\n]*",
     re.MULTILINE | re.DOTALL,
 )
 
