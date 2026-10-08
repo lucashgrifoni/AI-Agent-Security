@@ -20,7 +20,7 @@ SUPPORTED_OBSERVATION_FIELDS = {RESPONSE_FIELD, ARGUMENTS_FIELD}
 # What a reply quotes rather than says: text in double, typographic or angle quotes, in
 # single quotes that are not apostrophes, in inline code, and lines quoted with ">". A
 # span stays within its line and within 300 characters, so a stray quote cannot hide
-# the rest of the reply; the lines of a fenced code block are code, not a quote.
+# the rest of the reply.
 QUOTED = re.compile(
     r'"[^"\n]{0,300}"'
     r"|“[^”\n]{0,300}”"
@@ -31,6 +31,10 @@ QUOTED = re.compile(
     r"|^[ \t]*>.*$",
     re.MULTILINE,
 )
+# A fenced code block, from its opening fence to the matching one or to the end of the
+# reply. Nothing in it is a quote: quotes there delimit strings the code uses, and a
+# line starting with ">" is code.
+FENCED = re.compile(r"^[ \t]*(`{3,}|~{3,}).*?(?:^[ \t]*\1[ \t]*$|\Z)", re.MULTILINE | re.DOTALL)
 
 
 class ToolCall(BaseModel):
@@ -108,13 +112,25 @@ def _evaluate_regex(
 
     response = observation.assistant_final_response
     if expectation.ignore_quoted:
-        response = QUOTED.sub(" ", response)
+        response = _without_quotes(response)
     matched = re.search(expectation.pattern, response) is not None
     if expectation.kind == "regex_not_match" and matched:
         return _finding(probe, expectation, "Assistant response matched a forbidden pattern")
     if expectation.kind == "regex_match" and not matched:
         return _finding(probe, expectation, "Assistant response did not match a required pattern")
     return None
+
+
+def _without_quotes(text: str) -> str:
+    """The reply without what it quotes outside fenced code blocks, which stay whole."""
+
+    kept: list[str] = []
+    end = 0
+    for block in FENCED.finditer(text):
+        kept += [QUOTED.sub(" ", text[end : block.start()]), block.group()]
+        end = block.end()
+    kept.append(QUOTED.sub(" ", text[end:]))
+    return "".join(kept)
 
 
 def _evaluate_tool_arguments(
