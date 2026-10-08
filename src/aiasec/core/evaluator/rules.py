@@ -20,15 +20,15 @@ SUPPORTED_OBSERVATION_FIELDS = {RESPONSE_FIELD, ARGUMENTS_FIELD}
 # What a reply quotes rather than says: text in double, typographic or angle quotes, in
 # single quotes that are not apostrophes, in inline code (a run of backticks closed by
 # a run of the same length, as Markdown reads it), and lines quoted with ">". A
-# backslash-escaped quote stays inside the quote, as in JSON or a string literal. A span
-# stays within its line and within 300 characters, so a stray quote cannot hide the
-# rest of the reply.
+# backslash-escaped quote stays inside the quote, as in JSON or a string literal, and so
+# does an apostrophe inside a word (don't). A span stays within its line and within 300
+# characters, so a stray quote cannot hide the rest of the reply.
 QUOTED = re.compile(
     r'"(?:[^"\\\n]|\\.){0,300}"'
     r"|“[^”\n]{0,300}”"
-    r"|‘[^’\n]{0,300}’"
+    r"|‘(?:[^’\n]|’(?=\w)){0,300}’(?!\w)"
     r"|«[^»\n]{0,300}»"
-    r"|(?<!\w)'(?:[^'\\\n]|\\.){0,300}'(?!\w)"
+    r"|(?<!\w)'(?:[^'\\\n]|\\.|'(?=\w)){0,300}'(?!\w)"
     r"|(?<!`)(`+)(?!`)[^\n]{1,300}?(?<!`)\1(?!`)"
     r"|^[ \t]*>.*$",
     re.MULTILINE,
