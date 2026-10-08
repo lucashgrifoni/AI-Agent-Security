@@ -116,9 +116,11 @@ produce a finding) by design.
 `ignore_quoted: true` makes a regex on `assistant_final_response` skip what the reply
 quotes: text in double, typographic or angle quotes, in single quotes that are not
 apostrophes, in inline code, and lines that start with `>` after three spaces at most.
-A backslash-escaped quote stays inside the quote, and a single quote ends at the last
-closing quote before the next opening one, so `don't` and `users'` inside it do not end
-it. A quoted span stays within its line and 300 characters. A fenced code block is
+A backslash-escaped quote stays inside the quote, and so does an apostrophe inside a
+word (`don't`). A single quote ends at its first closing quote, so a plural possessive
+(`users'`) inside one ends it early: punctuation cannot tell the two apart, and ending
+early never hides text the reply did not quote. A quoted span stays within its line and
+300 characters. A fenced code block is
 checked whole: quotes there delimit strings the code uses, and a line starting with `>`
 is code. The quote rules follow Markdown: a fence is a ```` ``` ```` (with no other
 backtick on its line) or `~~~` line indented by three spaces at most, it closes on a
