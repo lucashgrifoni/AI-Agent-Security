@@ -66,6 +66,38 @@ updates:
         update-types:
           - "version-update:semver-major"
 
+  # Semgrep pins its dependencies tightly (jsonschema<4.26 in 1.179.0). Dependabot updates a
+  # package in every lock of a directory, and of its subdirectories, at once, so a semgrep
+  # lock next to ci.txt failed the whole job above. Its own directory keeps them apart.
+  - package-ecosystem: "uv"
+    directory: "/.github/requirements-semgrep"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:50"
+      timezone: "America/Sao_Paulo"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "python"
+      - "security"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    cooldown:
+      default-days: 7
+    groups:
+      semgrep:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+
   - package-ecosystem: "pip"
     directory: "/"
     schedule:

@@ -84,7 +84,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install Semgrep
-        run: python -m pip install --require-hashes -r .github/requirements/semgrep.txt
+        run: python -m pip install --require-hashes -r .github/requirements-semgrep/semgrep.txt
 
       - name: Scan application and workflow code
         run: |

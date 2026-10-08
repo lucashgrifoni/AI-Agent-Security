@@ -20,7 +20,10 @@ python -m pip install --no-deps --no-build-isolation -e .
 The `.txt` files in `.github/requirements` are generated from the `.in` files next to
 them; the first lines of each `.txt` record the `uv pip compile` command. When you add a
 dependency to `pyproject.toml`, add it to `action.in` (runtime) or `ci.in` (dev) and
-regenerate; `tests/test_ci_requirements.py` fails until you do.
+regenerate; `tests/test_ci_requirements.py` fails until you do. Semgrep has its own
+directory, `.github/requirements-semgrep`, because Dependabot moves a package to the same
+version in every lock of a directory and semgrep pins some of its dependencies below the
+versions the other locks use.
 
 ## Contribution Rules
 
