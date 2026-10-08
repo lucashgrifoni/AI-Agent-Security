@@ -46,7 +46,7 @@ QUOTED = re.compile(
 CODE_BLOCK = re.compile(
     r"^ {0,3}(?:(?P<ticks>`{3,})[^`\n]*|(?P<tildes>~{3,})[^\n]*)(?:\n|\Z)"
     r".*?(?:^ {0,3}(?:(?P=ticks)`*|(?P=tildes)~*)[ \t]*$|\Z)"
-    r"|(?:\A|(?<=\n\n))(?:(?: {4}|\t)[^\n]*(?:\n|\Z))+",
+    r"|(?:\A\n*|(?<=\n\n))(?:(?: {4}|\t)[^\n]*(?:\n|\Z))+",
     re.MULTILINE | re.DOTALL,
 )
 
