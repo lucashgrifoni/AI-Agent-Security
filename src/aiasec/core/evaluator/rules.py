@@ -36,14 +36,17 @@ QUOTED = re.compile(
     r"|^ {0,3}>.*$",
     re.MULTILINE,
 )
-# A fenced code block, from its opening fence to a closing fence of the same character
-# at least as long, or to the end of the reply. As in Markdown, a fence is indented by
+# A code block. Fenced: from its opening fence to a closing fence of the same character
+# at least as long, or to the end of the reply; as in Markdown, a fence is indented by
 # three spaces at most and a backtick fence has no backtick after it on its line.
-# Nothing in it is a quote: quotes there delimit strings the code uses, and a line
+# Indented: lines indented by four spaces or a tab, at the start of the reply or after
+# a blank line (a nested list paragraph indented that far is read as code too). Nothing
+# in a block is a quote: quotes there delimit strings the code uses, and a line
 # starting with ">" is code.
-FENCED = re.compile(
+CODE_BLOCK = re.compile(
     r"^ {0,3}(?:(?P<ticks>`{3,})[^`\n]*|(?P<tildes>~{3,})[^\n]*)(?:\n|\Z)"
-    r".*?(?:^ {0,3}(?:(?P=ticks)`*|(?P=tildes)~*)[ \t]*$|\Z)",
+    r".*?(?:^ {0,3}(?:(?P=ticks)`*|(?P=tildes)~*)[ \t]*$|\Z)"
+    r"|(?:\A|(?<=\n\n))(?:(?: {4}|\t)[^\n]*(?:\n|\Z))+",
     re.MULTILINE | re.DOTALL,
 )
 
@@ -133,14 +136,15 @@ def _evaluate_regex(
 
 
 def _without_quotes(text: str) -> str:
-    """The reply without what it quotes outside fenced code blocks, which stay whole."""
+    """The reply without what it quotes outside code blocks, which stay whole."""
 
-    # The patterns read lines that end in "\n"; any other line break (\r\n, a lone \r,
-    #  , ...) becomes one, so a quote never crosses a line.
-    text = "\n".join(text.splitlines())
+    # The patterns read lines that end in a newline. Any other line break (a lone
+    # carriage return, U+2028 and the rest) becomes one, so a quote never crosses a
+    # line, and a line of spaces becomes empty, so it ends a paragraph as a blank one.
+    text = "\n".join(line if line.strip() else "" for line in text.splitlines())
     kept: list[str] = []
     end = 0
-    for block in FENCED.finditer(text):
+    for block in CODE_BLOCK.finditer(text):
         kept += [QUOTED.sub(" ", text[end : block.start()]), block.group()]
         end = block.end()
     kept.append(QUOTED.sub(" ", text[end:]))
