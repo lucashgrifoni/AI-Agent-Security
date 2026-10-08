@@ -109,7 +109,8 @@ appear in their own section of the report (`runs[].properties.aiasec.judge` in S
 next to the rules result, and those that disagree are marked. They are advisory: a
 model can be wrong, and the reply it reads was written by the agent under test, which
 may address the judge. The reply reaches the judge between tags with a random code and
-the judge must answer one JSON object; anything else is recorded as `unclear`.
+the judge must end its answer with one JSON object, after any reasoning; anything else
+is recorded as `unclear`.
 
 The judge's provider receives each judged reply and its tool arguments. Against a
 real agent those can hold data the agent leaked; choose the provider accordingly.
@@ -467,7 +468,7 @@ tests/                 unit and end-to-end tests
 ## Current Limits
 
 - target mode supports MCP stdio and HTTP harnesses through the contract in `docs/target-contract.md`, and Anthropic, OpenAI-compatible and Ollama model APIs directly
-- the model API targets were tested against local servers that imitate each provider's documented formats, not against the live APIs; they send each probe turn as one request and never execute the tool calls the model asks for, so they test the model with your prompt and tools, not your agent's own loop
+- the model API targets were tested against local servers that imitate each provider's documented formats; only the Anthropic one has also run against the live API (claude-sonnet-5-5, the full suite and the judge), the OpenAI and Ollama ones have not. They send each probe turn as one request and never execute the tool calls the model asks for, so they test the model with your prompt and tools, not your agent's own loop
 - target mode speaks both MCP eras on stdio: 2026-07-28 (per-request `_meta`, found with `server/discover`) and the `initialize`-based revisions; multi round-trip results (`input_required`) are not supported
 - the GitHub Action does not support Windows runners (it uses a POSIX virtualenv layout)
 - no MCP HTTP adapter yet

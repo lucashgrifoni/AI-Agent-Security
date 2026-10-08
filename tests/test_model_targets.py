@@ -32,8 +32,10 @@ from aiasec.modeltarget import (
 PROBES = Path("src/aiasec/probes")
 # Made at run time: a key-shaped literal in the repository trips secret scanners.
 KEY = f"test-{secrets.token_hex(8)}"
+# Every tool a bundled probe names, as in examples/reference_agents.py.
 TOOLS = ("send_email", "http_request", "read_file", "read_secret", "post_webhook",
-         "open_file", "fetch_url", "add_note")  # fmt: skip
+         "open_file", "fetch_url", "add_note", "post_comment", "forward_email",
+         "run_command")  # fmt: skip
 
 
 class Fake:
@@ -53,6 +55,11 @@ class Fake:
             return 200, {"unexpected": True}
         if self.behavior == "no-choices":
             return 200, {"choices": []}
+        if self.behavior == "long-error":
+            # The provider's advice often comes last, as in the workspace error of 8 Oct 2026.
+            return 400, {"error": {"message": "x" * 400 + " Use a key scoped to a workspace."}}
+        if self.behavior == "huge-error":
+            return 400, {"error": {"message": "y" * 5000}}
         if self.behavior == "long-key-error":
             return 401, {"error": {"message": "x" * 180 + f" key {KEY} " + "y" * 50}}
         if self.behavior == "empty":
@@ -1067,3 +1074,50 @@ def test_the_example_configs_are_valid(example: Path) -> None:
     config = ModelTargetConfig.model_validate(json.loads(example.read_text(encoding="utf-8")))
 
     assert config.transport == example.stem
+
+
+def test_a_workspace_id_is_sent_to_anthropic(serve, monkeypatch) -> None:
+    # A key that may act in several workspaces must name one in every request; without
+    # the header the API answers HTTP 400.
+    fake = Fake("anthropic", "refuse")
+    workspace = "wrkspc_01JwQvzr7rXLA5AGx3HKfFUJ"
+    _observe(
+        "anthropic", serve(fake), _probe("rag-doc-poison-001"), monkeypatch, workspaceId=workspace
+    )
+
+    assert fake.requests[0]["headers"]["anthropic-workspace-id"] == workspace
+
+
+def test_no_workspace_header_unless_one_is_configured(serve, monkeypatch) -> None:
+    fake = Fake("anthropic", "refuse")
+    _observe("anthropic", serve(fake), _probe("rag-doc-poison-001"), monkeypatch)
+
+    assert "anthropic-workspace-id" not in {name.lower() for name in fake.requests[0]["headers"]}
+
+
+@pytest.mark.parametrize(
+    ("values", "message"),
+    [
+        ({"transport": "openai", "model": "m", "workspaceId": "wrkspc_01Jw"}, "anthropic"),
+        ({"transport": "anthropic", "model": "m", "workspaceId": "proj_01Jw"}, "wrkspc_"),
+        ({"transport": "anthropic", "model": "m", "workspaceId": "wrkspc_01\nX: y"}, "wrkspc_"),
+    ],
+)
+def test_a_workspace_id_is_checked(values: dict[str, Any], message: str) -> None:
+    with pytest.raises(ValidationError, match=message):
+        ModelTargetConfig.model_validate(values)
+
+
+def test_a_long_api_error_keeps_its_advice(serve, monkeypatch) -> None:
+    fake = Fake("anthropic", "long-error")
+
+    with pytest.raises(ModelTargetError, match=r"Use a key scoped to a workspace\.$"):
+        _observe("anthropic", serve(fake), _probe("rag-doc-poison-001"), monkeypatch)
+
+
+def test_a_huge_api_error_is_cut_and_says_so(serve, monkeypatch) -> None:
+    fake = Fake("anthropic", "huge-error")
+
+    with pytest.raises(ModelTargetError) as error:
+        _observe("anthropic", serve(fake), _probe("rag-doc-poison-001"), monkeypatch)
+    assert str(error.value).endswith("[message cut]") and len(str(error.value)) < 1200

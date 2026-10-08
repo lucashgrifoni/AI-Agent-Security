@@ -24,6 +24,8 @@ from aiasec.httptarget import HttpAgentTarget, HttpTargetConfig, HttpTargetError
 
 PROBES = Path("src/aiasec/probes")
 EXAMPLE = Path("examples/target-http-vulnerable/server.py")
+# Every tool a bundled probe names, as in examples/reference_agents.py: the vulnerable
+# agent calls each one its input mentions.
 SENTINEL_TOOLS = (
     "send_email",
     "http_request",
@@ -32,6 +34,9 @@ SENTINEL_TOOLS = (
     "post_webhook",
     "open_file",
     "fetch_url",
+    "post_comment",
+    "forward_email",
+    "run_command",
 )
 
 

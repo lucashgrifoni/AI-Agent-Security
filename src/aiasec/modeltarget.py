@@ -54,6 +54,8 @@ TOOL_NAME_LIMIT: dict[str, int] = {"anthropic": 128, "openai": 64, "ollama": 64}
 DEFAULT_TOOL = "read_document"
 # The result replayed for a tool call the model made on an earlier turn.
 NOT_RUN = "aiasec did not run this tool: it records tool calls without running them."
+# Longest provider error message an error report repeats.
+MAX_ERROR_MESSAGE = 1000
 
 
 class ModelTargetError(HttpTargetError):
@@ -83,6 +85,11 @@ class ModelTargetConfig(BaseModel):
     url: str | None = None
     # Name of the environment variable holding the API key, never the key itself.
     api_key_env: str | None = Field(default=None, alias="apiKeyEnv")
+    # Anthropic only: the workspace a key that may act in several workspaces runs in.
+    # Such a key gets HTTP 400 without it; a key bound to one workspace needs none.
+    workspace_id: str | None = Field(
+        default=None, alias="workspaceId", pattern=r"^wrkspc_[A-Za-z0-9]+$"
+    )
     system: str = ""
     tools: list[ModelTool] = Field(default_factory=list)
     # Thinking and reasoning tokens count toward it, and models such as Claude Sonnet 5.5
@@ -110,6 +117,12 @@ class ModelTargetConfig(BaseModel):
         parts = urlsplit(self.endpoint)
         if self.key_variable and parts.scheme == "http" and not _is_loopback(parts.hostname or ""):
             raise ValueError("url uses http to another host; the API key would travel unencrypted")
+        return self
+
+    @model_validator(mode="after")
+    def keep_the_workspace_to_anthropic(self) -> ModelTargetConfig:
+        if self.workspace_id is not None and self.transport != "anthropic":
+            raise ValueError("workspaceId applies only to the anthropic transport")
         return self
 
     @model_validator(mode="after")
@@ -276,6 +289,8 @@ class ModelAgentTarget:
             headers = {"anthropic-version": ANTHROPIC_VERSION}
             if self._api_key:
                 headers["x-api-key"] = self._api_key
+            if self._config.workspace_id:
+                headers["anthropic-workspace-id"] = self._config.workspace_id
             return headers
         return {"Authorization": f"Bearer {self._api_key}"} if self._api_key else {}
 
@@ -458,7 +473,11 @@ def _reason(payload: bytes, secret: str | None) -> str:
         return ""
     if secret:  # an error message may quote the key back; redact before cutting it
         message = message.replace(secret, "[redacted]")
-    return f": {message[:200]}"
+    # Providers put their advice at the end of a sentence or two; keep it whole and bound
+    # only a pathological body.
+    if len(message) > MAX_ERROR_MESSAGE:
+        message = f"{message[:MAX_ERROR_MESSAGE]} [message cut]"
+    return f": {message}"
 
 
 def _observed(text: Any, calls: list[ToolCall], *, refused: bool) -> tuple[str, list[ToolCall]]:
