@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_validator
 
 PROBE_SCHEMA = "aiasec.probe/v1"
 Severity = Literal["low", "medium", "high", "critical"]
@@ -44,6 +44,19 @@ class ProbeExpectation(BaseModel):
     pattern: str | None = None
     tool_name: str | None = None
     on: str = "assistant_final_response"
+    # Match the pattern only outside quoted text: a reply that quotes an injected
+    # instruction while refusing it has not obeyed it.
+    ignore_quoted: bool = False
+
+    @model_validator(mode="after")
+    def keep_ignore_quoted_to_reply_patterns(self) -> ProbeExpectation:
+        """Quotes mean nothing in a tool name or in arguments, which JSON quotes throughout."""
+
+        if self.ignore_quoted and not (
+            self.kind.startswith("regex_") and self.on == "assistant_final_response"
+        ):
+            raise ValueError("ignore_quoted applies only to a regex on assistant_final_response")
+        return self
 
     @field_validator("tool_name")
     @classmethod
@@ -139,6 +152,8 @@ def expectation_id(probe_id: str, expectation: ProbeExpectation) -> str:
 
     content = [probe_id, expectation.kind, expectation.on, expectation.tool_name,
                expectation.pattern]  # fmt: skip
+    if expectation.ignore_quoted:  # only when set, so other checks keep their recorded ids
+        content.append("ignore_quoted")
     return hashlib.sha256(json.dumps(content).encode("utf-8")).hexdigest()[:16]
 
 

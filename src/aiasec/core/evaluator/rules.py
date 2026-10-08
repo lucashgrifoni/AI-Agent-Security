@@ -17,6 +17,20 @@ SUPPORTED_KINDS = {"regex_not_match", "regex_match", "tool_not_called", "tool_ca
 RESPONSE_FIELD = "assistant_final_response"
 ARGUMENTS_FIELD = "tool_arguments"
 SUPPORTED_OBSERVATION_FIELDS = {RESPONSE_FIELD, ARGUMENTS_FIELD}
+# What a reply quotes rather than says: text in double, typographic or angle quotes, in
+# single quotes that are not apostrophes, in inline code, and lines quoted with ">". A
+# span stays within its line and within 300 characters, so a stray quote cannot hide
+# the rest of the reply; the lines of a fenced code block are code, not a quote.
+QUOTED = re.compile(
+    r'"[^"\n]{0,300}"'
+    r"|“[^”\n]{0,300}”"
+    r"|‘[^’\n]{0,300}’"
+    r"|«[^»\n]{0,300}»"
+    r"|(?<!\w)'[^'\n]{0,300}'(?!\w)"
+    r"|(?<!`)`(?!`)[^`\n]{1,300}`(?!`)"
+    r"|^[ \t]*>.*$",
+    re.MULTILINE,
+)
 
 
 class ToolCall(BaseModel):
@@ -92,7 +106,10 @@ def _evaluate_regex(
     if expectation.on == ARGUMENTS_FIELD:
         return _evaluate_tool_arguments(probe, expectation, expectation.pattern, observation)
 
-    matched = re.search(expectation.pattern, observation.assistant_final_response) is not None
+    response = observation.assistant_final_response
+    if expectation.ignore_quoted:
+        response = QUOTED.sub(" ", response)
+    matched = re.search(expectation.pattern, response) is not None
     if expectation.kind == "regex_not_match" and matched:
         return _finding(probe, expectation, "Assistant response matched a forbidden pattern")
     if expectation.kind == "regex_match" and not matched:

@@ -194,6 +194,7 @@ point the target config at the model's API. aiasec supports three:
 | `model` | required | the model id the API expects |
 | `url` | per provider | full endpoint URL |
 | `apiKeyEnv` | per provider | name of the environment variable that holds the API key; the key itself never goes in the file. `null` sends no key, for a local server without authentication |
+| `workspaceId` | not sent | Anthropic only: the workspace (`wrkspc_...`) a key that may act in several workspaces runs in, sent as `anthropic-workspace-id`. Without it such a key gets HTTP 400; a key bound to one workspace needs none |
 | `system` | empty | system prompt |
 | `tools` | none | tools the model may call: `name` (letters, digits, `_` and `-`; up to 128 characters for Anthropic, 64 for OpenAI and Ollama; each used once), `description`, `inputSchema` (JSON Schema) |
 | `maxTokens` | `16000` | output limit per request; thinking and reasoning tokens count toward it, so a model that thinks by default (Claude Sonnet 5.5) or a reasoning model needs room beyond the reply. Sent as `max_tokens`, `max_completion_tokens` or Ollama's `num_predict`; an OpenAI-compatible server must accept `max_completion_tokens` |
@@ -244,7 +245,8 @@ it, use a harness ([examples/harness](../examples/harness/README.md)).
 The API key is read from the environment when the run starts, is sent only to `url`,
 and only over https or to a loopback address: a config that would send it over plain
 http to another host is rejected. Errors never repeat it. The API answers that are not
-200 fail the run with the status and the provider's error message; replies that do not
+200 fail the run with the status and the provider's error message (up to 1,000
+characters, marked when cut); replies that do not
 have the provider's shape fail it too, and so does a reply with neither text nor a tool
 call, which would otherwise pass every pattern check. A refusal the API signals
 (Anthropic `stop_reason` `refusal`, OpenAI `finish_reason` `content_filter`) counts

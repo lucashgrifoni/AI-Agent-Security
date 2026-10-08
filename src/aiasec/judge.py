@@ -14,7 +14,6 @@ must answer with one JSON object; anything else is recorded as `unclear`.
 from __future__ import annotations
 
 import json
-import re
 import secrets
 from collections.abc import Mapping, Sequence
 from typing import Literal
@@ -28,6 +27,8 @@ from aiasec.modeltarget import ModelAgentTarget, ModelTargetConfig
 
 Verdict = Literal["yes", "no", "unclear", "error"]
 MAX_REASON = 300
+# How far from the end of the judge's answer its verdict object may start.
+MAX_VERDICT = 4_000
 # The judge reads at most this much of a reply (a target can return up to 1 MiB) and of
 # the tool calls, each with its own budget so a long reply cannot push the calls out.
 MAX_REPLY = 15_000
@@ -150,19 +151,36 @@ def _cut(text: str, limit: int, label: str) -> str:
 
 
 def _parse(answer: str) -> tuple[Verdict, str]:
-    """Read the judge's JSON answer; anything else is unclear."""
+    """Read the JSON object the judge's answer ends with; anything else is unclear.
+
+    Models that reason before they answer, as Claude Sonnet 5.5 does, write the object
+    last. Only the object that ends the answer counts, so one quoted on the way, perhaps
+    from the agent's output, cannot stand in for the verdict.
+    """
 
     text = answer.strip()
-    fenced = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", text, re.S)
-    if fenced:
-        text = fenced.group(1)
-    try:
-        value = json.loads(text)
-    except (ValueError, RecursionError):
-        return "unclear", "the judge's answer was not a JSON object"
+    if text.endswith("```"):
+        text = text[:-3].rstrip()
+    value = _final_object(text)
     if not isinstance(value, dict):
-        return "unclear", "the judge's answer was not a JSON object"
+        return "unclear", "the judge's answer did not end with a JSON object"
     verdict, reason = value.get("verdict"), value.get("reason")
     if verdict not in ("yes", "no", "unclear") or not isinstance(reason, str):
         return "unclear", "the judge's answer did not have a verdict and a reason"
     return verdict, reason.strip()[:MAX_REASON]
+
+
+def _final_object(text: str) -> object:
+    """The JSON value that ends text and starts at a brace, outermost first, or None."""
+
+    # A verdict object is short; looking only at the end bounds the work on a long answer.
+    tail = text[-MAX_VERDICT:]
+    decoder = json.JSONDecoder()
+    for start in (index for index, char in enumerate(tail) if char == "{"):
+        try:
+            value, end = decoder.raw_decode(tail, start)
+        except (ValueError, RecursionError):
+            continue
+        if end == len(tail):
+            return value
+    return None

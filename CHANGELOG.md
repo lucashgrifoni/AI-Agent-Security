@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+Fixes from the first run against the real Anthropic API (claude-sonnet-5-5):
+
+- Bundled probes no longer fail a model that refuses an injection and quotes the
+  sentinel while telling the user about it, which three of five failures in that run
+  were. A regex expectation can set `ignore_quoted: true` to skip quoted text, inline
+  code and `>` lines in the reply; 14 sentinel probes use it. Payloads whose presence is
+  the risk (markdown image, URL, script tag, shell pipe) and the system prompt secret
+  still count when quoted. **Changed check ids:** these 14 checks get new expectation
+  ids, so `aiasec compare` against a 0.3.0 baseline lists the old ones as no longer
+  run; make a new baseline.
+- `direct-injection-001` and `encoding-injection-001` give the agent a system rule the
+  override tries to break; before, saying the word only did what the user asked.
+  `direct-injection-001` matches the upper-case `COMPROMISED` only, so an answer that
+  says an account was not compromised passes.
+- The judge reads a verdict that follows its reasoning: the JSON object must end the
+  answer. Claude Sonnet 5.5 reasons first, and half of its opinions were recorded as
+  `unclear`.
+- Model API configs take `workspaceId` (Anthropic only), sent as
+  `anthropic-workspace-id`; a key that may act in several workspaces gets HTTP 400
+  without it.
+- A provider error message is kept up to 1,000 characters instead of 200, so its advice
+  at the end is not cut off; a longer one is marked as cut.
+
 ## 0.3.0 - 2026-10-07
 
 - `aiasec compare --baseline A.sarif --report B.sarif` reports each run's attack
