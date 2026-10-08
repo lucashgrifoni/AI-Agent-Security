@@ -18,23 +18,26 @@ RESPONSE_FIELD = "assistant_final_response"
 ARGUMENTS_FIELD = "tool_arguments"
 SUPPORTED_OBSERVATION_FIELDS = {RESPONSE_FIELD, ARGUMENTS_FIELD}
 # What a reply quotes rather than says: text in double, typographic or angle quotes, in
-# single quotes that are not apostrophes, in inline code, and lines quoted with ">". A
-# span stays within its line and within 300 characters, so a stray quote cannot hide
-# the rest of the reply.
+# single quotes that are not apostrophes, in inline code (a run of backticks closed by
+# a run of the same length, as Markdown reads it), and lines quoted with ">". A span
+# stays within its line and within 300 characters, so a stray quote cannot hide the
+# rest of the reply.
 QUOTED = re.compile(
     r'"[^"\n]{0,300}"'
     r"|“[^”\n]{0,300}”"
     r"|‘[^’\n]{0,300}’"
     r"|«[^»\n]{0,300}»"
     r"|(?<!\w)'[^'\n]{0,300}'(?!\w)"
-    r"|(?<!`)`(?!`)[^`\n]{1,300}`(?!`)"
+    r"|(?<!`)(`+)(?!`)[^\n]{1,300}?(?<!`)\1(?!`)"
     r"|^[ \t]*>.*$",
     re.MULTILINE,
 )
-# A fenced code block, from its opening fence to the matching one or to the end of the
-# reply. Nothing in it is a quote: quotes there delimit strings the code uses, and a
-# line starting with ">" is code.
-FENCED = re.compile(r"^[ \t]*(`{3,}|~{3,}).*?(?:^[ \t]*\1[ \t]*$|\Z)", re.MULTILINE | re.DOTALL)
+# A fenced code block, from its opening fence to a closing fence of the same character
+# at least as long, or to the end of the reply. Nothing in it is a quote: quotes there
+# delimit strings the code uses, and a line starting with ">" is code.
+FENCED = re.compile(
+    r"^[ \t]*((`|~)\2{2,}).*?(?:^[ \t]*\1\2*[ \t]*$|\Z)", re.MULTILINE | re.DOTALL
+)
 
 
 class ToolCall(BaseModel):
