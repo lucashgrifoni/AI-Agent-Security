@@ -32,15 +32,19 @@ QUOTED = re.compile(
     r"|«[^»\n]{0,300}»"
     r"|(?<!\w)'(?:[^'\\\n]|\\.|(?<=\w)'){0,300}'(?!\w)"
     r"|(?<!`)(`+)(?!`)[^\n]{1,300}?(?<!`)\1(?!`)"
-    r"|^[ \t]*>.*$",
+    # Indented by four columns or a tab, ">" starts code in Markdown, not a quote.
+    r"|^ {0,3}>.*$",
     re.MULTILINE,
 )
 # A fenced code block, from its opening fence to a closing fence of the same character
-# at least as long, or to the end of the reply; as in Markdown, a fence is indented by
-# three spaces at most. Nothing in it is a quote: quotes there delimit strings the code
-# uses, and a line starting with ">" is code.
+# at least as long, or to the end of the reply. As in Markdown, a fence is indented by
+# three spaces at most and a backtick fence has no backtick after it on its line.
+# Nothing in it is a quote: quotes there delimit strings the code uses, and a line
+# starting with ">" is code.
 FENCED = re.compile(
-    r"^ {0,3}((`|~)\2{2,}).*?(?:^ {0,3}\1\2*[ \t]*$|\Z)", re.MULTILINE | re.DOTALL
+    r"^ {0,3}(?:(?P<ticks>`{3,})[^`\n]*|(?P<tildes>~{3,})[^\n]*)(?:\n|\Z)"
+    r".*?(?:^ {0,3}(?:(?P=ticks)`*|(?P=tildes)~*)[ \t]*$|\Z)",
+    re.MULTILINE | re.DOTALL,
 )
 
 
