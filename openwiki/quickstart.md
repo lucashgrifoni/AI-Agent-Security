@@ -3,15 +3,15 @@ type: "quickstart"
 title: "AI agent security testbed"
 description: "Route observed replies, explicit target runs and rules-based report gates without promoting results into runtime protection."
 tags: ["agents","probes","mcp"]
-verified:
-  - by: openwiki/0.7.2
-    at: 2026-10-14T19:18:58.715Z
 sources:
   - id: openwiki-source-05ccef8d4cf1698187f20464
     resource: repo://pyproject.toml
   - id: openwiki-source-00e7e13ce81ae4881fcd1042
     resource: repo://src/aiasec/core/runner.py
 generated: { by: "codex", at: "2026-10-14T19:16:48.664Z" }
+verified:
+  - by: openwiki/0.7.2
+    at: 2026-10-14T23:10:39.454Z
 ---
 
 # AI agent security testbed

@@ -3,15 +3,15 @@ type: "concept"
 title: "Rules and report gate"
 description: "Interpret deterministic expectations, executed-probe counts and explicit subset acceptance."
 tags: ["rules","sarif","gate"]
-verified:
-  - by: openwiki/0.7.2
-    at: 2026-10-14T19:18:58.715Z
 sources:
   - id: openwiki-source-0cf9d872ddf9e6d788ab0e48
     resource: repo://src/aiasec/core/evaluator/rules.py
   - id: openwiki-source-ca798e730a770fb6902687fb
     resource: repo://src/aiasec/core/gate.py
 generated: { by: "codex", at: "2026-10-14T19:16:48.664Z" }
+verified:
+  - by: openwiki/0.7.2
+    at: 2026-10-14T23:10:39.454Z
 ---
 
 # Rules and report gate

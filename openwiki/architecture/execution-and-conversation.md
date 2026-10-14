@@ -5,7 +5,7 @@ description: "Follow observation selection, explicit target execution and turn-b
 tags: ["targets","conversation","observations"]
 verified:
   - by: openwiki/0.7.2
-    at: 2026-10-14T19:18:58.715Z
+    at: 2026-10-14T23:10:39.454Z
 sources:
   - id: openwiki-source-a6d68662dc7b8aa31d816581
     resource: repo://src/aiasec/cli/app.py
