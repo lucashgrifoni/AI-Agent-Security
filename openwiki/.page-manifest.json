@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "pages": {
+    "/openwiki/architecture/execution-and-conversation.md": {
+      "pageVersion": "sha256:d8937361733c2a8c3860827e40f0113a3fb1f0334ec2b08946b442e6fb13f7ae",
+      "completedBy": "codex",
+      "completedRunId": "2296c9b5-f0d0-4f82-852f-ea1673eb40b9",
+      "gitHead": "92b8bc412b41c3da21d49f0dfd46a82185c5b8e8",
+      "sourceFingerprint": "sha256:53758c310eac2c8f796868a645c13c31d14b5a4cd13ab0db2916287ade51c4c6"
+    },
+    "/openwiki/concepts/rules-and-gate.md": {
+      "pageVersion": "sha256:fb021224f77f00e71e247b8f9e105173eebb5274f95a263037bee59ce375a41e",
+      "completedBy": "codex",
+      "completedRunId": "2296c9b5-f0d0-4f82-852f-ea1673eb40b9",
+      "gitHead": "92b8bc412b41c3da21d49f0dfd46a82185c5b8e8",
+      "sourceFingerprint": "sha256:53758c310eac2c8f796868a645c13c31d14b5a4cd13ab0db2916287ade51c4c6"
+    },
+    "/openwiki/operations/probes-and-tests.md": {
+      "pageVersion": "sha256:08c32dfb12ad9edfadd709b8a0c20a69182cf51761ac7c34bd28285b51ca7c57",
+      "completedBy": "codex",
+      "completedRunId": "2296c9b5-f0d0-4f82-852f-ea1673eb40b9",
+      "gitHead": "92b8bc412b41c3da21d49f0dfd46a82185c5b8e8",
+      "sourceFingerprint": "sha256:53758c310eac2c8f796868a645c13c31d14b5a4cd13ab0db2916287ade51c4c6"
+    },
+    "/openwiki/quickstart.md": {
+      "pageVersion": "sha256:30975231a3b52a2ff985d136bdca0068833e6881ee5d93a55c3ffc19cc0856d6",
+      "completedBy": "codex",
+      "completedRunId": "2296c9b5-f0d0-4f82-852f-ea1673eb40b9",
+      "gitHead": "92b8bc412b41c3da21d49f0dfd46a82185c5b8e8",
+      "sourceFingerprint": "sha256:53758c310eac2c8f796868a645c13c31d14b5a4cd13ab0db2916287ade51c4c6"
+    }
+  }
+}

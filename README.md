@@ -490,3 +490,7 @@ python -m ruff check .
 The SARIF schema test is skipped unless `AIASEC_SARIF_SCHEMA` points at a local copy
 of the [SARIF 2.1.0 schema](https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json).
 CI downloads it and fails if that test does not run.
+
+## Repository wiki
+
+[Source-linked repository guide](openwiki/quickstart.md) · [OpenWiki setup and maintenance](docs/openwiki.md).
