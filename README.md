@@ -8,7 +8,7 @@
 
 - 22 bundled probes across 7 attack categories, defined in YAML and mapped to the OWASP LLM, MCP and Agentic Top 10 lists
 - deterministic, rules-only evaluation: no LLM decides the result (an optional LLM judge adds advisory opinions)
-- a live target mode that sends every probe to the agent under test over MCP stdio or HTTP
+- a live target mode that sends every probe to the agent under test over MCP stdio or HTTP, or straight to a model API (Anthropic, OpenAI-compatible or Ollama)
 - Markdown and SARIF 2.1.0 reports that GitHub code scanning can display
 - a fail-closed release gate with per-severity thresholds
 
@@ -18,18 +18,24 @@ This is not a runtime guardrail and it is not a full red-team framework. Use it 
 
 `aiasec run` has two modes, and every report states which one produced it:
 
-- **Target mode** (`--target`, `observationMode: mcp-stdio-target` or `http-target`): aiasec sends each probe to your agent harness, either an MCP stdio server it starts or an HTTP endpoint, one call per conversation turn, then scores the final reply and every tool the agent reports calling, with its arguments when the harness reports them. See [docs/target-contract.md](docs/target-contract.md).
+- **Target mode** (`--target`, `observationMode: mcp-stdio-target`, `http-target` or `model-api-target`): aiasec sends each probe to your agent harness, either an MCP stdio server it starts or an HTTP endpoint, or to a model API, one call per conversation turn, then scores the final reply and every tool call reported, with its arguments when they are reported. See [docs/target-contract.md](docs/target-contract.md) and [Test a model directly](#test-a-model-directly).
 - **Observation mode** (`--response`, `observationMode: single-observation`): aiasec scores every probe against one response you supply, and the tool calls you list with `--tools-called` or `--tool-calls-file`. Nothing is sent anywhere, so a passing probe means that response did not trigger it, not that an agent resisted the attack.
-
-Vendor SDK adapters (Anthropic, OpenAI, Ollama) are left for later iterations; an agent behind HTTP is tested through the HTTP target mode above.
 
 ## Install
 
-Python 3.12 or newer. `aiasec` is not on PyPI yet; install it from GitHub:
+Python 3.12 or newer. `aiasec` is distributed only through GitHub; it is not published to PyPI. Install a release tag, so that the version you run is the one you reviewed:
 
 ```bash
-python -m pip install "git+https://github.com/lucashgrifoni/AI-Agent-Security.git"
+python -m pip install "git+https://github.com/lucashgrifoni/AI-Agent-Security.git@v0.3.1"
 aiasec --version
+```
+
+Each [GitHub Release](https://github.com/lucashgrifoni/AI-Agent-Security/releases) also carries the wheel with a signed build attestation. To install it after checking where it was built:
+
+```bash
+gh release download v0.3.1 -R lucashgrifoni/AI-Agent-Security -p "*.whl"
+gh attestation verify ai_agent_security_testbed-0.3.1-py3-none-any.whl -R lucashgrifoni/AI-Agent-Security
+python -m pip install ai_agent_security_testbed-0.3.1-py3-none-any.whl
 ```
 
 For development, clone the repository and install it editable with the dev extras:
