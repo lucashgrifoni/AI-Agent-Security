@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:e320110e2e6d82fb8dd7afeca4cd56e240f92542fdf44f7c12989b0a07d746f4",
+  "claims": [
+    {
+      "id": "claim_f3edc24e81cc4ed09e39e5f1e6f95c72",
+      "statement": "The CLI separates target and supplied-observation inputs, requires execute for target operations and dispatches HTTP/model/MCP targets.",
+      "evidence": [
+        {
+          "resource": "repo://src/aiasec/cli/app.py#L298-L350",
+          "version": "repo-lines-v1:sha256:a15ef509f0d396aa2c6fde0899ec77b8be69a018075511fa34009408eca03e74:eyJzZWxlY3RlZExpbmVDb3VudCI6NTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ3MDJiZjBkY2I3OWE5MDU0MWY1MjMyNTUzNGM3YTEwZDA3YTIxNmYyNzI4ZDZjOGUxZGVhNzVkMGUwOWEyN2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYxOTRmYmJkOTVjOWJmZmYwNTFmNWYzMTI5MTkwYTY4MGVjODg3YWVjZWFhZWI5MjAyMzViNDRmMWEwN2I4YjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc1NGM4Y2I0OGEyYmMxOTNjNzIwNTc3ZjRhN2MzZjE5MTk0M2U4NWYzZDBiZTVlMTAwZTA4YTk2ZGE3YzFlYjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlhOGFmM2EyYjhkMDZlNTFkODU2YTA5YTkwNTNmMDVlMWVjN2VmOWY2MmM5NmU1MjNjN2NjNDgwMDAzODlhMTQifQ"
+        },
+        {
+          "resource": "repo://src/aiasec/cli/app.py#L434-L473",
+          "version": "repo-lines-v1:sha256:a8bedf98b0af780954205cdee0290de6a07917b674dade7cec70d654377dd29b:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVlODE1MWMyZDgwM2ExMjI0Mzc2ZjUxYTAzYzg2MGNhMzEzYzIxZmZjYjdhZmI3MWE3MjViNmUzYzE2OGI0NjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFmMWQ1MWVhMWIwOWU3OWVmOTRjZDEyNzhlMTkxYjU4MzhiODA2Yzc1MzQ2Y2VlNDYzMzEyNWRmZjlmMWNjMDQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjIwN2NlNmEwNGM0YTM2YzQ4M2FkZjI5NjkyMDM4YzhhYzkyZTI2ZTliNDk1ZjdlZDY3N2NkYTI3NDNhNTBjYTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE5MTcxMDI0MDJlNDgzYzVlYzNhMzg3MDgyZTJiMzVkMzk2M2JhMzgyNzQ5ODVkZGQ1NDgxYzY3OGQ1MDAzNTcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a44f87449e434d8c8778b96cae27f21e",
+      "statement": "The conversation driver sends accumulated turns, retains assistant replies and collects tool calls across all turns while scoring the final reply.",
+      "evidence": [
+        {
+          "resource": "repo://src/aiasec/core/conversation.py",
+          "version": "repo-file-v1:sha256:f6e4d57f7c486ec3a36d1e3f6300d8736d0b9e4035c9178141b0154206937a02"
+        }
+      ]
+    },
+    {
+      "id": "claim_8d9adffdaba84a009d01128f86099190",
+      "statement": "Direct model transports record model-requested tool calls without executing them.",
+      "evidence": [
+        {
+          "resource": "repo://src/aiasec/modeltarget.py#L1-L59",
+          "version": "repo-lines-v1:sha256:0b86bbca70807079a63eba2fd5b9d45a358c7d0dc82e8719cfcc884ed3c4baa0:eyJzZWxlY3RlZExpbmVDb3VudCI6NTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk5NDhiZDEyMzEzMDNiZmM3NGZiNDRmNTYxMTIyMzg4NmI5NjI5MWYwMDk1ZDg3YThlYWI3YmQxNmM1YTdmMmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA2ZWQ2ZmI0MDgzMGM3YmIwOGFlMGRkNmEwNDcxYmZjZDUxNmJkYzMxNGQ2YTNkMDk5MWM1YmMxOTVmZjFhODEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_75b9a8d8356b438dadf6fba7c94fa067",
+      "statement": "Optional judge opinions are passed to report rendering after rules results and do not replace the rules evaluator.",
+      "evidence": [
+        {
+          "resource": "repo://src/aiasec/cli/app.py#L475-L490",
+          "version": "repo-lines-v1:sha256:e5098bdefd8c3c67f43b7d2a9d5400d41a5416406bc31263d75c61c198f8662c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlmZDVhZjBkYjk3ZmRjYTViMTZhYTg3OWNlZDg3NDAxNjBlNTA4NzY4YjBmNzFlNmQ0NTJmNjZmNGY4MjU3NmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFkYTVjNjZlMTdiMTQ1Mzk3ODM0YjhjODU0ZGM0MTkzZTIxMjUxODBhODk5NmExNGMzMTg4MzMyNmIyZWZiY2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU5ZTNmNWQ5NDU3MTdjNmU1MjNiNWY3MGFmNTQ2YzdmNzFhOTVlOGZhMzBkMTAxZjY2MmZhMjU4ZGU2MTc4MjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImMyYzY3ZDNlN2JkMDQ0YTA4NmM5NWRkYTQ0NzRhMzJlZjMzNDRlMGFlYzRkOGIxODJkY2YxYWYwYWM1MjVjNjAifQ"
+        },
+        {
+          "resource": "repo://src/aiasec/core/probe.py#L71-L90",
+          "version": "repo-lines-v1:sha256:af20f6c93b43350f3871703effff79c1f44c03c25ee2bfcb2dfac0e2751f05d7:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFhODg4OGE2Mjk4MDNiNDM3ZTRjYTVkNTIzNDhhOTgxYmM1OGNjOGJjYWMxNDIxZWIwMDBjODc4OTI2MGFjMjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkwMDgyMWY4YjJjMTUxOGM0YmYzNDQ3MDY5YWIyMTU2ODRkMTAzNTM3NTk0ZWYwZjAxZWU2ZDczYzNkMzFiOTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU2NWM5MWQxMGY1NDlmNWEwYzI1YWQwOTc3ODhlZmI1MWRjOTJhNjBhZjMzNDY3YmQ3NDY3OGY1ZjNhMWE4OWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJjYjM4OGMxMWFiODc3NGVjMjc0NjI5Y2Q4ZjZmM2JmMDc1Mzc0NjUxNzI1MTA4YmEwMTZmZDY2ZjU3ZTNmOTYifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-14T23:10:39.454Z"
+  }
+}

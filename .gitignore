@@ -26,3 +26,8 @@ build/
 aiasec-report.*
 .aiasec-smoke/
 node_modules/
+
+# Local OpenWiki integration and generated scheduling scaffold
+/.agents/skills/openwiki/
+/.codex/
+/.github/workflows/openwiki-update.yml

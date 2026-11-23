@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:a24e46552a0e6d56232689b4c20b95f5911b8c718543fca9d9003d1675378d9f",
+  "claims": [
+    {
+      "id": "claim_e65ed15ec7e447439a185e4ab9ac7d26",
+      "statement": "The probe schema is aiasec.probe/v1 with strict fields, nonempty identity and rules as the only evaluator.",
+      "evidence": [
+        {
+          "resource": "repo://src/aiasec/core/probe.py#L69-L105",
+          "version": "repo-lines-v1:sha256:4da7cbc28747dab95a077bd23112d8cb8520579af8b8668c0046c38102e953f6:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjViNDdkZTgyZDg4ZWYxNjJhZmMyNGMyMDc1NjNlYTUwYjM0YzVhNTMzM2JmYzk3ZWUyMmYwZjFkY2FmZTgyMjEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ5M2RjYzZlOGFmNGFiNzhmNmM3ZTY1YjU0Mjg3NGJmY2Q4ZjQ4ZTRlNmJmZTNhZDY1NzY0ZTk3ZDYxZTU0MzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdmOWRmMjk5YjQ0ZTMwNjg4OWY0ZWEyNTQ1ODBhY2JlZGVkODhjMDRmZDRjMDA2ZDY2OWU2ZWYwNDcyMDFlODYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e5023a51197e415d990cdc68b4dab944",
+      "statement": "The repository has executable tests for gate thresholds and filtered-report acceptance.",
+      "evidence": [
+        {
+          "resource": "repo://tests/test_gate.py",
+          "version": "repo-file-v1:sha256:a9c263f365175722eece95ac8585748400ce306287d75653ff15ecc7564d7bc5"
+        },
+        {
+          "resource": "repo://tests/test_gate_partial.py",
+          "version": "repo-file-v1:sha256:6befd712b7f44a8d48e426a4ee39489a179b6c2bf4f4d0fdf769e9bb5decfa9a"
+        }
+      ]
+    },
+    {
+      "id": "claim_90eaee1ad3e74ff8bf996ca85d722439",
+      "statement": "Semgrep, CodeQL and Trivy jobs grant actions read, and Gitleaks history grants pull-requests read in the security workflow.",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/security.yml#L246-L321",
+          "version": "repo-lines-v1:sha256:5d09d165f47ae22d83a674193e98ab9ead482cc1ef64c6c539befb13ddc6de01:eyJzZWxlY3RlZExpbmVDb3VudCI6NzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ0NzdiOTk5ZmUxZjNhMDNmZjVlNGRiZmIwOTcyMGM0YzYzMjdlYWVlNzU2MzgzZjRkZTc1Y2E3NzdiNTg2OWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE0MmUwNzY3MDAxMzFlMWJlMzI3Nzk1NWI2Yjg4NjFkMDlhZWZkZTk4ODUzMjBlYThjOTg0ZDQwZjU0NTRkMDAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBlZjc1NzI2MzRjZmQ2YjU0MzFjNDg1OGI2N2QxOTBlOWQwMjViNDVjY2FjNzk0MTAzZWVjOTZkMDU2NmI3MTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU3Y2JlYjkyNzRkZjMzZjg2ZWRkNTEyMGU3NGViMzg2MmRjZTM2NTY2MTZjOGVhZDM1OGU5OGRmM2Q4MDVhMTEifQ"
+        },
+        {
+          "resource": "repo://.github/workflows/security.yml#L55-L151",
+          "version": "repo-lines-v1:sha256:a8038008cb4b069f18f62084dd09d040bc36635f8bb50f7af02d1c59e9fde781:eyJzZWxlY3RlZExpbmVDb3VudCI6OTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJkNmY2ODAxZjk4ZWIwNDkwMDhhZGFlODkxZTA2YmQ4NWFiZTA1NzE4YWYwNGE2ZjM3ZjU2NzY4ODQ3Yjc3YjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI5YmVjMWE4MzZmOWFmMWE0MWEyMTBmMGJlOTE3NTUyYTE1MmNmM2JhMjdhOGI4N2M1ODQ3NmUyODg5ZmQ2NTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ2MDIxMmRhNTNhZjQwNjM2ZThkYzMyOTNhNjU4NTE0YmMzY2Y1ODVjN2MyZWQ2ZjRiYWUzZTQ1ZGI1MDI3YzQifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-14T23:10:39.454Z"
+  }
+}

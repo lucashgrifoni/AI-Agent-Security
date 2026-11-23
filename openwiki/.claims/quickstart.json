@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:65b64e97716227da80e3ee515f72c9748f56f3a356990be10d054840df867cff",
+  "claims": [
+    {
+      "id": "claim_1c89483d0af44f32ae7d2c413f6cda54",
+      "statement": "The package registers aiasec as aiasec.cli.app:app and requires Python>=3.12.",
+      "evidence": [
+        {
+          "resource": "repo://pyproject.toml#L30-L31",
+          "version": "repo-lines-v1:sha256:af21515093c3179dd002569463d7d38efd0f5301d91ec263ade55f66e6966e7a:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNGVhYjRlYzYzZGU1MTdkYTRjZDhlNWM4MzA3ZmIyYzc3MzdkMzkxOTBhYjY5ZjMyYTVlOWVmODFlYTQ0MTZkZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTU3MjA2OWQ1MDUzMzUxYTA3OTFjMjM4NDhhYWMxZDg0NDQzNzY2ZDRlZGQ5MTc5NzBkODczNjgyZjhmYTllOSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZjIzMWVjNzZkMzRjZTEwNWUzNWQwZDJlODI3MTBmYTIyODhmYWVhYmU5NmVhNWNlOTg5OGU2YjRlMjlmZjk0ZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTBlYjE5MjYzYzIxMDE0YWFlMTkzYWVhYTllZDExNWI0M2EzNDRhZWQ1MmFhMWZmZmFmYzBjY2QwZDQzMGUxMCJ9"
+        },
+        {
+          "resource": "repo://pyproject.toml#L5-L11",
+          "version": "repo-lines-v1:sha256:b2cafd5e93c6bde2391ef8c79584da9c69caf71811dbc001eaa301ae53e9b262:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzAyYTgxYzM4MzZlZGVmMmQwYmExMWQyMzUzZmI2ZGFiYzc3NzE1MGE3Y2E4M2VhMGQ5ZTlhNzAzMTNmZWFiYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNWQ2MWYxMTA5ODVkNjU1ZjJhOTdjZGZlMjRhOTFmMzM5ZDIzNmVkM2YxZDU0ZDY4ZjhiMGMxZWFhNzg0NzZmYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzM5YjQzOWJhNTlmYzU5Y2UwY2YyNmI3OTEwNzRlOWQ3ZDkwMzE2Zjc4ODQ4ZjQ5ZWNhMDdkNjBjZTcxZjM4OCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOWZlYzA1MjE2OGI0MmU2MDVlODlhZDg3MWQ4ZDk2YzgyYjZhNmViNThiNDRiZDc2MzM1MDQ0Zjg2Zjg3NTg3MiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_7fefb35dca25400284c65c56ad7884d3",
+      "statement": "The runner evaluates either one supplied observation for all probes or a separately obtained observation per probe.",
+      "evidence": [
+        {
+          "resource": "repo://src/aiasec/core/runner.py",
+          "version": "repo-file-v1:sha256:c9bb854f40523367aa6131ce76b364564cebf354b5ee25988348325ed514f079"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-14T23:10:39.454Z"
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:bde22942524f0bd2021905d1a1cd43d40e0c050e73fa204b208c1a17a17ff4ee",
+  "claims": [
+    {
+      "id": "claim_481e4b431bf7460b90ab3a5238e09998",
+      "statement": "The evaluator supports regex match/nonmatch and tool called/not-called checks, and detailed tool calls contribute names to the observation.",
+      "evidence": [
+        {
+          "resource": "repo://src/aiasec/core/evaluator/rules.py#L17-L20",
+          "version": "repo-lines-v1:sha256:0f63f8991d8449245b1d06b8484e07bb3588bebdf0236129cd8591b0acb7058e:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMWMzYmFlZTBiN2MwNzFlYzE1NWVhN2Y4ZGI1YWI2NTA2MjQ3NzRlNDlkMDYzNGNiNjQ0ZjQ0MWIzZjAxNGM4OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZDEzYTFjYTI0MWI3YzQ3OGQ4ZGMwMTJmYzVhZGJjZDVhZWVmYmU0Y2E3OWQyYTQ0NDRkNzI1YTVmZGY0NjE3ZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzg5NGE4MDI5ZDFmNzA0MWM5MGI2ODExZGNmM2Q0NjZhMDc2YTE4MmMxNzcwNDU0Y2YxZTI1MzNjMzljYzRlNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYmJmZTdhMmI4MThmYjA2M2E1Nzc0MWIyNDJkYjZhZDlhNmJjZjRiYjhjMTQ3YzNmZTk5ZjI3YWM4MzEyMWI5ZCJ9"
+        },
+        {
+          "resource": "repo://src/aiasec/core/evaluator/rules.py#L64-L113",
+          "version": "repo-lines-v1:sha256:343e9caee24aa2691c016c0a8c5fbf9c46b08c6dcc9fd63575aaaf210f73f482:eyJzZWxlY3RlZExpbmVDb3VudCI6NTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZmNTVhOTljZGU5ODgyMGQxMWViZWM4ZDI1M2NlZTU5NmNjMDYxOWQ2MGE1ZDBiNzhmNDZlZjc5NDczNjZmYWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI0NDdiMjg3MWZmYWFhNGE5YjQxMmRjMDE5ODhiMzRjNmY4YzgyM2JhNzQ0YTdkYTEyODUxZGQ0YmNiMDA1ZmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE0NTE5NTJlZjA0MjkwNTVhY2Q4Zjc3NWI4MDgxNDhmYWJlNDBlMzY3YWQ1NmQxNDUyODc4YmUzNWRjZTU5MTcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b3b64fa628924b90ba422fcc40aebb63",
+      "statement": "The gate rejects missing/invalid or zero executed-probe counts and refuses filtered reports unless partial evaluation is explicitly allowed.",
+      "evidence": [
+        {
+          "resource": "repo://src/aiasec/core/gate.py#L125-L199",
+          "version": "repo-lines-v1:sha256:f7c246bf92836f5b763c3c0f38d22846fd5068960712ed6c9b49bce110d7a78a:eyJzZWxlY3RlZExpbmVDb3VudCI6NzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM1ZjE3YjIzZDZmYTI0NzBlNmU2ZmU3MjJlOTBkODg4ZDNhYzM2OTQwOWEyN2FiOTdmYTJiYmQ5YzBiMmI1YjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM2NDI0MjdmMTFhMTViMGFmZTc5MmJlYTY4YWQxMzc0OGI2YzU4OGNhYjIyN2JmZWNhNDcxZDQ1OTRlNmFmMjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjljMjUwNTc1ZmViNTY0MTY2NDI4ODhiMTY5ZGQ2MjcyNGQyZTY3MGUwYzc4YzNlMWU3NWYzOTliNGRjNTM4OTcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f62768a1e7bc4e49a34745f249a65a32",
+      "statement": "Gate severity budgets are optional maximum counts, with None meaning unlimited.",
+      "evidence": [
+        {
+          "resource": "repo://src/aiasec/core/gate.py#L107-L122",
+          "version": "repo-lines-v1:sha256:a2ffa0e4288af0efd5a31c3b0cc05cf70f0676e164b4f2c7a32cee00a746416a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE0MWM4NDcyNDk0ZGU1ZmY4MTQ2YjkzYzA3MjhiMDQ5N2M4MjgzYTE4NWViZTZmZDg2MzY3NTEwNzQxNDIzNDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE1ZWE3Y2M4NjYwODhkMGYyNjQyMDVhZmI2YWY3Yzk4ODkzNjI5OTQwMjY2ZDQ0NWRlODQxYWM1ZjQyZjRkN2MifQ"
+        },
+        {
+          "resource": "repo://src/aiasec/core/gate.py#L25-L38",
+          "version": "repo-lines-v1:sha256:44177d6c143cdf9b9f0b2fc3e7e77e5fe5baad596da5179af1c6553cdd704c95:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUyMDE2MDBkMmE0NDUzZjk2ZGNlMDY2NmNjYmY5YmVjNDg0YjQxNWQwYWY3Nzc5OTEwOGNjYTAwNTI5ZGMzZjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZkYWM4NWFjOWI2MjE4YTgzZjFkYmYzNDQ3OTkxOGNmZmU4N2RlOGU5ODllN2VkZDI5YzRkM2ViODA5YzFkYjEifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-14T23:10:39.454Z"
+  }
+}
