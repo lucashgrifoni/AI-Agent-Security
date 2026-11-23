@@ -31,6 +31,3 @@ node_modules/
 /.agents/skills/openwiki/
 /.codex/
 /.github/workflows/openwiki-update.yml
-/AGENTS.md
-/CLAUDE.md
-/GEMINI.md
