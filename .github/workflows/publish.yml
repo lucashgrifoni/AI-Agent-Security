@@ -1,17 +1,8 @@
 # Publish
 #
 # When a GitHub Release is published: build the wheel and sdist, attest their build
-# provenance, generate a CycloneDX SBOM of the installed wheel, attach all of it to the
-# release, and publish to PyPI through trusted publishing (OIDC). No API token is stored.
-#
-# One-time owner setup before the PyPI job can run:
-#   1. On pypi.org, Account settings > Publishing > Add a pending publisher:
-#      project ai-agent-security-testbed, owner lucashgrifoni,
-#      repository AI-Agent-Security, workflow publish.yml, environment pypi.
-#   2. Set the repository variable PYPI_PUBLISH to true.
-# Until then the PyPI job is skipped and the release still receives its signed assets.
-# TestPyPI works the same way through workflow_dispatch, the testpypi environment and
-# the TESTPYPI_PUBLISH variable.
+# provenance, generate a CycloneDX SBOM of the installed wheel, and attach all of it to
+# the release. The GitHub Release is the only distribution channel.
 #
 # Harden-Runner stays in audit here on purpose: these jobs move artifacts between jobs
 # and to the release through rotating GitHub endpoints that an exact allowlist cannot
@@ -23,16 +14,6 @@ on:
   release:
     types:
       - published
-  workflow_dispatch:
-    inputs:
-      target:
-        description: "Where to publish"
-        required: true
-        default: testpypi
-        type: choice
-        options:
-          - testpypi
-          - pypi
 
 permissions:
   contents: read
@@ -85,13 +66,11 @@ jobs:
           PY
 
       - name: The release tag and every version string agree
-        # Nothing is attested, attached or published when a manual version bump was
-        # missed: the tag, pyproject.toml, aiasec.__version__ and the built metadata must
-        # all name one version. A workflow_dispatch run checks the tag it runs on, and a
-        # manual PyPI publish must run on one.
+        # Nothing is attested or attached when a manual version bump was missed: the
+        # release tag, pyproject.toml, aiasec.__version__ and the built metadata must all
+        # name one version.
         env:
-          RELEASE_TAG: ${{ github.event.release.tag_name || (github.ref_type == 'tag' && github.ref_name) || '' }}
-          PUBLISH_TARGET: ${{ inputs.target }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           python - <<'PY'
           import os, pathlib, re, tarfile, tomllib, zipfile
@@ -112,11 +91,7 @@ jobs:
               "wheel metadata": wheel_version,
               "sdist metadata": sdist_version,
           }
-          tag = os.environ.get("RELEASE_TAG", "")
-          if os.environ.get("PUBLISH_TARGET") == "pypi" and not tag:
-              raise SystemExit("A manual PyPI publish must run on a v* tag")
-          if tag:
-              versions["release tag"] = tag.removeprefix("v")
+          versions["release tag"] = os.environ["RELEASE_TAG"].removeprefix("v")
           assert len(set(versions.values())) == 1, f"versions disagree: {versions}"
           print(f"{wheel_version}: {', '.join(versions)} agree")
           PY
@@ -160,7 +135,6 @@ jobs:
   release-assets:
     name: Attach assets to the GitHub Release
     needs: build
-    if: github.event_name == 'release'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -185,80 +159,9 @@ jobs:
 
       - name: Upload to the release
         # No --clobber: a retried run that rebuilt the files fails here instead of
-        # replacing the assets with bytes PyPI may not have.
+        # replacing assets that users may already have downloaded and verified.
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.event.release.tag_name }}
         run: gh release upload "$TAG" dist/* release-assets/*
-
-  publish-pypi:
-    name: Publish to PyPI
-    # On a release, PyPI gets the files only after this run attached the same files to
-    # the GitHub Release, so the two can never serve different bytes. A manual run has
-    # no release-assets job and publishes once the build passes.
-    needs: [build, release-assets]
-    if: >-
-      !cancelled() &&
-      needs.build.result == 'success' &&
-      contains(fromJSON('["success", "skipped"]'), needs.release-assets.result) &&
-      vars.PYPI_PUBLISH == 'true' &&
-      (github.event_name == 'release' ||
-       (github.event_name == 'workflow_dispatch' && inputs.target == 'pypi'))
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    environment:
-      name: pypi
-      url: https://pypi.org/p/ai-agent-security-testbed
-    permissions:
-      id-token: write
-    steps:
-      - name: Harden runner
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
-        with:
-          egress-policy: audit
-
-      - name: Download dist
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: dist
-          path: dist/
-
-      - name: Publish
-        # No skip-existing: a retried release that rebuilds different bytes must fail
-        # instead of leaving PyPI and the GitHub Release with different files.
-        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
-        with:
-          attestations: true
-
-  publish-testpypi:
-    name: Publish to TestPyPI
-    needs: build
-    if: >-
-      vars.TESTPYPI_PUBLISH == 'true' &&
-      github.event_name == 'workflow_dispatch' && inputs.target == 'testpypi'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    environment:
-      name: testpypi
-      url: https://test.pypi.org/p/ai-agent-security-testbed
-    permissions:
-      id-token: write
-    steps:
-      - name: Harden runner
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
-        with:
-          egress-policy: audit
-
-      - name: Download dist
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: dist
-          path: dist/
-
-      - name: Publish
-        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
-        with:
-          repository-url: https://test.pypi.org/legacy/
-          attestations: true
-          skip-existing: true

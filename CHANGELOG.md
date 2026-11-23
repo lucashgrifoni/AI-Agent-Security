@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Releases are distributed only through GitHub. The `Publish` workflow keeps the
+  build, the provenance attestation, the SBOM and the release assets, and no longer
+  has the PyPI and TestPyPI jobs or the manual trigger that fed them. The README
+  installs a release tag and shows how to verify the attested wheel before installing.
+- The README describes the model API targets added in 0.3.0 among the target modes,
+  instead of listing them as left for later.
+
 ## 0.3.1 - 2026-10-08
 
 Fixes from the first run against the real Anthropic API (claude-sonnet-5-5):
