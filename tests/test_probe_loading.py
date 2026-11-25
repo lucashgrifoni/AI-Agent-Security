@@ -34,7 +34,7 @@ def test_parse_probe_reads_the_same_probe_as_the_file_loader() -> None:
 
 
 def test_a_probe_file_nested_too_deeply_is_invalid_instead_of_a_crash(tmp_path: Path) -> None:
-    # Found by fuzz/fuzz_probe_yaml.py: the YAML composer recurses once per level and
+    # Found while writing fuzz/fuzz_probe_yaml.py: the YAML composer recurses once per level and
     # raised RecursionError, which none of the probe loaders' callers expect.
     path = tmp_path / "deep.yaml"
     path.write_text("[" * 5_000 + "]" * 5_000, encoding="utf-8")

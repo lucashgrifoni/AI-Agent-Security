@@ -32,7 +32,7 @@ Each harness has a seed corpus in `fuzz/corpus/<harness>/` (bundled probes, repo
 aiasec wrote, the MCP fixtures, and the inputs behind past crashes) and uses one of the
 libFuzzer dictionaries `fuzz/json.dict`, `fuzz/quotes.dict` or `fuzz/yaml.dict`.
 
-The first runs found three crashes, all fixed with a regression test and a seed:
+Writing the harnesses found three crashes, now fixed, each with a regression test and a seed:
 a deeply nested report escaped `aiasec gate` and `aiasec compare` as `RecursionError`
 (exit code 1 and a traceback instead of 2), so did a deeply nested probe file, and a
 tool definition nested over a thousand levels deep crashed `aiasec mcp audit`.
