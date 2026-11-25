@@ -133,28 +133,123 @@ def test_pull_requests_build_and_smoke_run_the_image_without_pushing() -> None:
     assert "--version" in script and "probes list" in script
 
 
-def test_only_the_release_job_can_push_the_image_and_it_attests_it() -> None:
-    granted = [
+def test_the_container_job_allowlist_covers_the_docker_hub_hosts() -> None:
+    # Docker Hub serves the base image layers from its Cloudflare CDN and its R2 blob
+    # store; under egress-policy block, a missing host fails every pull request.
+    job = _workflow("ci.yml")["jobs"]["container"]
+    harden = _steps_using(job, "step-security/harden-runner@")[0]["with"]
+    allowed = set(harden["allowed-endpoints"].split())
+
+    assert harden["egress-policy"] == "block"
+    assert {
+        "auth.docker.io:443",
+        "registry-1.docker.io:443",
+        "production.cloudflare.docker.com:443",
+        "docker-images-prod.6aa30f8b08e16409b46e0173d6de2f56.r2.cloudflarestorage.com:443",
+    } <= allowed
+
+
+def _jobs_granting(permission: str) -> list[tuple[str, str]]:
+    return [
         (name, job_name)
         for name in sorted(path.name for path in Path(".github/workflows").glob("*.yml"))
         for job_name, job in _workflow(name)["jobs"].items()
-        if (job.get("permissions") or {}).get("packages") == "write"
+        if (job.get("permissions") or {}).get(permission) == "write"
     ]
-    assert granted == [("publish.yml", "container")]
 
-    job = _workflow("publish.yml")["jobs"]["container"]
+
+def test_no_third_party_action_runs_where_packages_can_be_written() -> None:
+    # Harden-Runner is the one exception the repository requires on every Linux job.
+    for name, job_name in _jobs_granting("packages"):
+        for step in _workflow(name)["jobs"][job_name]["steps"]:
+            action = str(step.get("uses", "actions/"))
+            assert action.startswith(("actions/", "step-security/harden-runner@")), (
+                f"{name}:{job_name} runs {action} next to packages: write"
+            )
+
+
+def test_the_image_sbom_is_generated_in_a_job_that_holds_no_credential() -> None:
+    jobs = _workflow("publish.yml")["jobs"]
+    job = jobs["container-build"]
+    sbom = _steps_using(job, "anchore/sbom-action@")
+
+    assert job["permissions"] == {"contents": "read"}
+    assert len(sbom) == 1
+    assert sbom[0]["with"]["github-token"] == ""
+    assert sbom[0]["with"]["upload-artifact"] is False
+    assert sbom[0]["with"]["upload-release-assets"] is False
+    # The image archive is uploaded before the scanner runs, and the push job checks
+    # that the archive holds the image ID recorded right after the build.
+    steps = job["steps"]
+    paths = [(step.get("with") or {}).get("path") for step in steps]
+    assert paths.index("aiasec-image.tar") < steps.index(sbom[0])
+    assert "image-id" in job["outputs"]
+    push = jobs["container"]
+    assert push["needs"] == "container-build"
+    script = "\n".join(step.get("run", "") for step in push["steps"])
+    assert "docker load" in script and '"$IMAGE_ID"' in script and "docker build" not in script
+
+
+def test_only_the_release_job_can_push_the_image_and_it_attests_it() -> None:
+    assert _jobs_granting("packages") == [("publish.yml", "container")]
+
+    jobs = _workflow("publish.yml")["jobs"]
+    job = jobs["container"]
     script = "\n".join(step.get("run", "") for step in job["steps"])
     assert job["env"]["IMAGE"] == IMAGE
-    assert 'docker push "$IMAGE:$VERSION"' in script and 'docker push "$IMAGE:latest"' in script
+    assert 'docker push "$IMAGE:$VERSION"' in script
     # A rerun must not replace an image tag that users may already have pulled and verified.
     assert 'docker manifest inspect "$IMAGE:$VERSION"' in script
     provenance = _steps_using(job, "actions/attest-build-provenance@")
-    sbom = _steps_using(job, "anchore/sbom-action@")
+    sbom = _steps_using(jobs["container-build"], "anchore/sbom-action@")
     sbom_attestation = _steps_using(job, "actions/attest@")
     assert len(provenance) == len(sbom) == len(sbom_attestation) == 1
     assert sbom[0]["with"]["format"] == "cyclonedx-json"
-    assert sbom[0]["with"]["upload-release-assets"] is False
-    assert sbom_attestation[0]["with"]["sbom-path"] == sbom[0]["with"]["output-file"]
+    assert Path(sbom_attestation[0]["with"]["sbom-path"]).name == sbom[0]["with"]["output-file"]
     for attestation in (*provenance, *sbom_attestation):
         assert attestation["with"]["subject-name"] == IMAGE
         assert attestation["with"]["push-to-registry"] is True
+
+
+def test_latest_moves_only_for_the_highest_full_release_after_attestation() -> None:
+    steps = _workflow("publish.yml")["jobs"]["container"]["steps"]
+    latest = [i for i, step in enumerate(steps) if "$IMAGE:latest" in step.get("run", "")]
+    attested = [
+        i for i, step in enumerate(steps) if str(step.get("uses", "")).startswith("actions/attest")
+    ]
+
+    assert len(latest) == 1, "exactly one step may move :latest"
+    step = steps[latest[0]]
+    # release: published also fires for pre-releases.
+    assert step["if"].replace(" ", "") == "${{!github.event.release.prerelease}}"
+    # A patch to an older line must not move :latest back.
+    assert "--exclude-pre-releases" in step["run"] and "sort -V" in step["run"]
+    assert latest[0] > max(attested)
+
+
+def _bash_blocks(path: str) -> str:
+    text = Path(path).read_text(encoding="utf-8")
+    return "\n".join(re.findall(r"```bash\n(.*?)```", text, re.S))
+
+
+def test_the_documented_image_commands_verify_and_run_one_digest() -> None:
+    # Verifying a tag and then running the same tag resolves it twice: the image that
+    # runs may not be the one that was verified.
+    for doc in ("README.md", "docs/releasing.md"):
+        commands = _bash_blocks(doc)
+        tagged = [line for line in commands.splitlines() if f"{IMAGE}:" in line]
+
+        assert tagged and all("imagetools inspect" in line for line in tagged), (doc, tagged)
+        assert f'image="{IMAGE}@$digest"' in commands, doc
+        assert 'gh attestation verify "oci://$image"' in commands, doc
+    assert 'docker run --rm "$image"' in _bash_blocks("README.md")
+
+
+def test_the_security_workflow_scope_note_matches_the_shipped_image() -> None:
+    header = Path(".github/workflows/security.yml").read_text(encoding="utf-8").split("\nname:")[0]
+
+    assert DOCKERFILE.exists()
+    assert "Dockerfile, or Kubernetes manifests here" not in header
+    # The image is not vulnerability-scanned in CI: the gap is recorded and owned.
+    assert "docs/releasing.md" in header
+    assert "## Known gaps" in Path("docs/releasing.md").read_text(encoding="utf-8")

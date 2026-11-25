@@ -36,13 +36,18 @@ Optional, and it needs the maintainer's own account:
    It never replaces a file that already exists: a retried run fails instead, so a
    verified asset never changes. To retry after a partial failure, delete the release
    assets first, then re-run the failed workflow run.
-6. In the same workflow, the `container` job builds the image from the `Dockerfile`,
-   stops if the tag and `pyproject.toml` do not name one version, generates a
-   CycloneDX SBOM of the image, and pushes `:X.Y.Z` and `:latest` to GHCR. It then
-   pushes a build provenance attestation and an SBOM attestation for the image digest
-   to the registry. It is the only job with `packages: write`. It refuses to push a
-   version tag that already exists, so to retry it, delete that package version
-   first, then re-run the failed job.
+6. In the same workflow, the `container-build` job, which can write nothing, builds
+   the image from the `Dockerfile`, stops if the tag and `pyproject.toml` do not name
+   one version, generates a CycloneDX SBOM of the image, and hands the image (as a
+   `docker save` archive) and the SBOM to the `container` job. That job loads the
+   archive only if it holds the image ID the build job recorded, pushes `:X.Y.Z` to
+   GHCR, and pushes a build provenance attestation and an SBOM attestation for the
+   image digest to the registry. Only then does it move `:latest`, and only for a
+   full release that is the highest released version: a pre-release or a patch to an
+   older line leaves `:latest` where it is. It is the only job with
+   `packages: write`, and it runs no third-party action apart from Harden-Runner. It
+   refuses to push a version tag that already exists, so to retry it, delete that
+   package version first, then re-run the failed jobs.
 
 ## Verifying a release
 
@@ -53,17 +58,29 @@ gh attestation verify ai_agent_security_testbed-X.Y.Z-py3-none-any.whl -R lucash
 
 The attestation names the workflow and the commit that built the file.
 
-For the container image:
+For the container image, resolve the tag to a digest once and verify that digest; a
+tag can be pushed again, a digest cannot change:
 
 ```bash
-gh attestation verify oci://ghcr.io/lucashgrifoni/ai-agent-security-testbed:X.Y.Z -R lucashgrifoni/AI-Agent-Security
-gh attestation verify oci://ghcr.io/lucashgrifoni/ai-agent-security-testbed:X.Y.Z -R lucashgrifoni/AI-Agent-Security \
+digest="$(docker buildx imagetools inspect ghcr.io/lucashgrifoni/ai-agent-security-testbed:X.Y.Z --format '{{.Manifest.Digest}}')"
+image="ghcr.io/lucashgrifoni/ai-agent-security-testbed@$digest"
+gh attestation verify "oci://$image" -R lucashgrifoni/AI-Agent-Security
+gh attestation verify "oci://$image" -R lucashgrifoni/AI-Agent-Security \
   --predicate-type https://cyclonedx.org/bom
 ```
 
 The base image is pinned by digest in the `Dockerfile`; Dependabot's `docker` entry
 proposes digest updates. Pull requests build the image and run it in the CI
 `container` job without pushing.
+
+## Known gaps
+
+- The container image is not vulnerability-scanned, and the `Dockerfile` is not
+  misconfiguration-scanned, in CI or before the push. pip-audit covers only the
+  Python dependency set; the Debian packages of the `python:3.12-slim` base are not
+  checked by any job. Until a hash-pinned image scanner runs in the CI `container`
+  job, the image's SBOM attestation is what a consumer can scan, and the maintainer
+  owns refreshing the base digest when Dependabot proposes one.
 
 ## CI network policy
 

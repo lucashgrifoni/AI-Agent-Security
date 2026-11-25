@@ -11,7 +11,9 @@
 #   - Trivy vuln / Trivy SBOM: the project ships no lockfile, so a filesystem scan
 #     finds no packages and would report clean while testing nothing. pip-audit and
 #     the CycloneDX job audit the dependency set the wheel actually resolves to.
-#   - KICS / Trivy misconfig: no IaC, Dockerfile, or Kubernetes manifests here.
+#   - KICS / Trivy misconfig and image scanning: there is no IaC or Kubernetes
+#     manifest here. The Dockerfile and the image it builds are not scanned yet; that
+#     gap is recorded under "Known gaps" in docs/releasing.md.
 #   - Snyk Open Source: dependency SCA is pip-audit (the resolved runtime set) and
 #     Dependency Review (pull requests).
 #

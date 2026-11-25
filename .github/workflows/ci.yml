@@ -195,12 +195,15 @@ jobs:
         uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           egress-policy: block
-          # Docker Hub (the pinned base image) and PyPI (the hash-locked installs).
+          # Docker Hub (the pinned base image: registry, auth, and the CDN and R2 blob
+          # hosts that serve its layers) and PyPI (the hash-locked installs).
           allowed-endpoints: >
             api.github.com:443
             auth.docker.io:443
+            docker-images-prod.6aa30f8b08e16409b46e0173d6de2f56.r2.cloudflarestorage.com:443
             files.pythonhosted.org:443
             github.com:443
+            production.cloudflare.docker.com:443
             production.cloudfront.docker.com:443
             pypi.org:443
             registry-1.docker.io:443

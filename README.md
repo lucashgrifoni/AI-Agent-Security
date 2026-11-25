@@ -41,26 +41,28 @@ python -m pip install ai_agent_security_testbed-0.3.1-py3-none-any.whl
 ### Container image
 
 Releases published after 0.3.1 also push a container image to the GitHub Container
-Registry, `ghcr.io/lucashgrifoni/ai-agent-security-testbed`, tagged with the version
-and `latest`. It runs `aiasec` as a non-root user (uid 10001) from a digest-pinned
-`python:3.12-slim` base, with the hash-locked runtime dependencies and no build tools
-or pip. Each image carries a build provenance attestation and a CycloneDX SBOM
-attestation in the registry. Verify the image before you run it, and pull it by the
-digest you verified (replace `X.Y.Z` with the release version):
+Registry, `ghcr.io/lucashgrifoni/ai-agent-security-testbed`, tagged with the version.
+`latest` names the highest full release; pre-releases never move it. The image runs
+`aiasec` as a non-root user (uid 10001) from a digest-pinned `python:3.12-slim` base,
+with the hash-locked runtime dependencies and no build tools or pip. Each image
+carries a build provenance attestation and a CycloneDX SBOM attestation in the
+registry. A tag can be pushed again, so resolve the version tag to a digest once, then
+verify and run that digest (replace `X.Y.Z` with the release version):
 
 ```bash
-gh attestation verify oci://ghcr.io/lucashgrifoni/ai-agent-security-testbed:X.Y.Z -R lucashgrifoni/AI-Agent-Security
-gh attestation verify oci://ghcr.io/lucashgrifoni/ai-agent-security-testbed:X.Y.Z -R lucashgrifoni/AI-Agent-Security \
+digest="$(docker buildx imagetools inspect ghcr.io/lucashgrifoni/ai-agent-security-testbed:X.Y.Z --format '{{.Manifest.Digest}}')"
+image="ghcr.io/lucashgrifoni/ai-agent-security-testbed@$digest"
+gh attestation verify "oci://$image" -R lucashgrifoni/AI-Agent-Security
+gh attestation verify "oci://$image" -R lucashgrifoni/AI-Agent-Security \
   --predicate-type https://cyclonedx.org/bom
-docker run --rm ghcr.io/lucashgrifoni/ai-agent-security-testbed:X.Y.Z --version
+docker run --rm "$image" --version
 ```
 
 Mount the directory that holds your target configs, and receives the reports, at
 `/work`. On Linux, pass your own user id so that the reports belong to you:
 
 ```bash
-docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/work" \
-  ghcr.io/lucashgrifoni/ai-agent-security-testbed:X.Y.Z \
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/work" "$image" \
   run --response "I cannot follow that instruction." --output report.sarif
 ```
 

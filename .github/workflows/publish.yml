@@ -2,10 +2,12 @@
 #
 # When a GitHub Release is published: build the wheel and sdist, attest their build
 # provenance, generate a CycloneDX SBOM of the installed wheel, and attach all of it to
-# the release. The container job builds the image from the Dockerfile, pushes it to
-# ghcr.io/lucashgrifoni/ai-agent-security-testbed as :<version> and :latest, and pushes
-# a build provenance attestation and a CycloneDX SBOM attestation for its digest to the
-# registry. GitHub (Releases and GHCR) is the only distribution channel.
+# the release. The container-build job builds the image from the Dockerfile and its
+# CycloneDX SBOM without any write permission; the container job pushes that image to
+# ghcr.io/lucashgrifoni/ai-agent-security-testbed as :<version>, pushes a build
+# provenance attestation and an SBOM attestation for its digest to the registry, and
+# moves :latest only for the highest full release. GitHub (Releases and GHCR) is the
+# only distribution channel.
 #
 # Harden-Runner stays in audit here on purpose: these jobs move artifacts between jobs,
 # to the release and to the registry, and sign through Sigstore, over rotating endpoints
@@ -169,19 +171,20 @@ jobs:
           TAG: ${{ github.event.release.tag_name }}
         run: gh release upload "$TAG" dist/* release-assets/*
 
-  container:
-    name: Build, push and attest the container image
+  container-build:
+    name: Build and inventory the container image
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    # The only job in the repository that can write packages.
+    # No write permission and no credential: the image is built, smoke-run and
+    # inventoried here, and handed to the push job as a docker save archive.
     permissions:
       contents: read
-      packages: write
-      id-token: write
-      attestations: write
     env:
       IMAGE: ghcr.io/lucashgrifoni/ai-agent-security-testbed
       RELEASE_TAG: ${{ github.event.release.tag_name }}
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      image-id: ${{ steps.build.outputs.image-id }}
     steps:
       - name: Harden runner
         uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
@@ -194,29 +197,96 @@ jobs:
           persist-credentials: false
 
       - name: The release tag names the package version
+        id: version
         run: |
           version="$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
           test "${RELEASE_TAG#v}" = "$version" || { echo "tag $RELEASE_TAG != pyproject $version"; exit 1; }
           echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Build the image
+        id: build
         run: |
           docker build \
             --build-arg SOURCE_DATE_EPOCH="$(git log -1 --pretty=%ct)" \
             --build-arg VERSION="$VERSION" \
             --build-arg REVISION="$GITHUB_SHA" \
-            --tag "$IMAGE:$VERSION" --tag "$IMAGE:latest" .
+            --tag "$IMAGE:$VERSION" .
           docker run --rm "$IMAGE:$VERSION" --version
+          echo "image-id=$(docker inspect --format '{{.Id}}' "$IMAGE:$VERSION")" >> "$GITHUB_OUTPUT"
+          docker save --output aiasec-image.tar "$IMAGE:$VERSION"
+
+      - name: Upload the image archive
+        # Before the scanner runs. The push job loads this archive only if it holds
+        # the image ID that the build step recorded.
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: container-image
+          path: aiasec-image.tar
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Generate the CycloneDX SBOM of the image
-        # Before the registry login: the scanner never sees a credential.
+        # Third-party code that downloads and runs the Syft installer. It runs here, in
+        # a job that can write nothing and has no OIDC token, and it gets no GitHub
+        # token: the action uses one only for the uploads, which are off.
         uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           image: ${{ env.IMAGE }}:${{ env.VERSION }}
           format: cyclonedx-json
           output-file: aiasec-image.cdx.json
+          github-token: ""
           upload-artifact: false
           upload-release-assets: false
+
+      - name: Upload the image SBOM
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: container-sbom
+          path: aiasec-image.cdx.json
+          if-no-files-found: error
+          retention-days: 1
+
+  container:
+    name: Push and attest the container image
+    needs: container-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # The only job in the repository that can write packages. Apart from Harden-Runner,
+    # every step is a first-party action or a shell command: no third-party code runs
+    # next to the package, OIDC and attestation permissions.
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      IMAGE: ghcr.io/lucashgrifoni/ai-agent-security-testbed
+      VERSION: ${{ needs.container-build.outputs.version }}
+      IMAGE_ID: ${{ needs.container-build.outputs.image-id }}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+
+      - name: Download the image archive
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: container-image
+          path: image/
+
+      - name: Download the image SBOM
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: container-sbom
+          path: sbom/
+
+      - name: Load the image that the build job built
+        run: |
+          docker load --input image/aiasec-image.tar
+          loaded="$(docker inspect --format '{{.Id}}' "$IMAGE:$VERSION")"
+          test "$loaded" = "$IMAGE_ID" || { echo "the archive holds $loaded, the build job built $IMAGE_ID"; exit 1; }
 
       - name: Push to GHCR
         id: push
@@ -231,7 +301,6 @@ jobs:
             echo "$IMAGE:$VERSION already exists"; exit 1
           fi
           docker push "$IMAGE:$VERSION"
-          docker push "$IMAGE:latest"
           digest="$(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE:$VERSION")"
           digest="${digest#*@}"
           [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "no pushed digest: $digest"; exit 1; }
@@ -251,9 +320,27 @@ jobs:
         with:
           subject-name: ghcr.io/lucashgrifoni/ai-agent-security-testbed
           subject-digest: ${{ steps.push.outputs.digest }}
-          sbom-path: aiasec-image.cdx.json
+          sbom-path: sbom/aiasec-image.cdx.json
           push-to-registry: true
           create-storage-record: false
+
+      - name: Move latest to this release
+        # release: published also fires for pre-releases, and a patch to an older line
+        # must not move :latest back. It runs after the attestations, so :latest never
+        # names an image without them.
+        if: ${{ !github.event.release.prerelease }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          highest="$(gh release list --exclude-drafts --exclude-pre-releases --limit 1000 \
+            --json tagName --jq '.[].tagName' | sed 's/^v//' | sort -V | tail -n 1)"
+          if [ "$highest" != "$VERSION" ]; then
+            echo "$VERSION is not the highest release ($highest): :latest stays where it is"
+            exit 0
+          fi
+          docker tag "$IMAGE:$VERSION" "$IMAGE:latest"
+          docker push "$IMAGE:latest"
 
       - name: Log out of GHCR
         if: always()
