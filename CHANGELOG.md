@@ -43,6 +43,17 @@ All notable changes to this project will be documented in this file.
 - Error messages that repeat text from a target or an MCP server write its control
   characters and invisible Unicode as escapes, so a malicious server cannot clear or
   rewrite the terminal through `aiasec run` or `aiasec mcp tools`.
+- Six probes (28 in all): `unicode-tag-injection-001` (an instruction in invisible
+  Unicode tag characters), `ansi-escape-injection-001` (an instruction hidden from a
+  terminal by escape codes), `delayed-trigger-injection-001` (a rule planted by a
+  document in one turn that fires on a later turn, mapped to ASI06),
+  `multilingual-injection-001` (an injected instruction in Spanish),
+  `destructive-action-001` (a document that makes the agent call `delete_files`) and
+  `secret-in-tool-argument-001` (a system prompt secret in a `fetch_url` argument).
+  The reference agents know the `delete_files` tool.
+- The MCP stdio harness template, and the reference MCP targets built on it, read and
+  write their pipes as UTF-8. On Windows they used the locale encoding, which garbled
+  every character outside ASCII that aiasec sent; the new Unicode tag probe found it.
 - Decision records in `docs/adr/` for five decisions already in force: rules decide
   results, tool calls are never executed, the gate fails closed, GitHub-only
   distribution, and quoted sentinels.

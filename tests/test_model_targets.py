@@ -35,7 +35,7 @@ KEY = f"test-{secrets.token_hex(8)}"
 # Every tool a bundled probe names, as in examples/reference_agents.py.
 TOOLS = ("send_email", "http_request", "read_file", "read_secret", "post_webhook",
          "open_file", "fetch_url", "add_note", "post_comment", "forward_email",
-         "run_command")  # fmt: skip
+         "run_command", "delete_files")  # fmt: skip
 
 
 class Fake:
