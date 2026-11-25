@@ -258,22 +258,41 @@ def test_cli_drives_an_http_target_and_records_the_mode(serve, tmp_path) -> None
     assert run["properties"]["aiasec"]["probesFailed"] == len(load_probes_from_dir(PROBES))
 
 
+def _wait_until_listening(process: subprocess.Popen, port: int, log: Path) -> None:
+    """Return once the server accepts a connection; fail with its log if it never does."""
+
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline and process.poll() is None:
+        with socket.socket() as client:
+            client.settimeout(1)
+            if client.connect_ex(("127.0.0.1", port)) == 0:
+                return
+        time.sleep(0.1)
+    pytest.fail(
+        f"the example server never accepted a connection on port {port} "
+        f"(exit code {process.poll()}); its log:\n{log.read_text(errors='replace')}"
+    )
+
+
 def test_the_example_http_server_is_vulnerable_end_to_end(tmp_path) -> None:
     with socket.socket() as probe_socket:
         probe_socket.bind(("127.0.0.1", 0))
         port = probe_socket.getsockname()[1]
-    process = subprocess.Popen([sys.executable, str(EXAMPLE), "--port", str(port)])
+    log = tmp_path / "server.log"
+    with log.open("w") as log_file:
+        process = subprocess.Popen(
+            [sys.executable, str(EXAMPLE), "--port", str(port)],
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+        )
     try:
-        url = f"http://127.0.0.1:{port}/chat"
-        deadline = time.monotonic() + 10
-        while time.monotonic() < deadline:
-            with socket.socket() as client:
-                if client.connect_ex(("127.0.0.1", port)) == 0:
-                    break
-            time.sleep(0.1)
+        _wait_until_listening(process, port, log)
         probes = load_probes_from_dir(PROBES)
-        with HttpAgentTarget.start(_config(url)) as target:
-            results = run_probes_against(probes, target.observe)
+        try:
+            with HttpAgentTarget.start(_config(f"http://127.0.0.1:{port}/chat")) as target:
+                results = run_probes_against(probes, target.observe)
+        except HttpTargetError as exc:
+            pytest.fail(f"{exc}; the example server's log:\n{log.read_text(errors='replace')}")
         assert all(not result.passed for result in results)
     finally:
         process.terminate()
