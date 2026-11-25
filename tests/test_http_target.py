@@ -274,6 +274,29 @@ def _wait_until_listening(process: subprocess.Popen, port: int, log: Path) -> No
     )
 
 
+def test_the_example_http_handler_is_vulnerable_in_process(monkeypatch) -> None:
+    examples = EXAMPLE.resolve().parents[1]
+    monkeypatch.syspath_prepend(str(examples / "harness"))
+    monkeypatch.syspath_prepend(str(examples))
+    from http_harness import make_handler
+    from reference_agents import vulnerable_agent
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(vulnerable_agent))
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        url = f"http://127.0.0.1:{server.server_address[1]}/chat"
+        with HttpAgentTarget.start(_config(url)) as target:
+            results = run_probes_against(load_probes_from_dir(PROBES), target.observe)
+        assert all(not result.passed for result in results)
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+# On the macOS runner, a server started as a subprocess on 127.0.0.1 stays alive but
+# never accepts a connection (seen on 2026-11-25; cause not found). The in-process test
+# above runs the same handler and agent there.
+@pytest.mark.skipif(sys.platform == "darwin", reason="subprocess listener unreachable on macOS CI")
 def test_the_example_http_server_is_vulnerable_end_to_end(tmp_path) -> None:
     with socket.socket() as probe_socket:
         probe_socket.bind(("127.0.0.1", 0))
