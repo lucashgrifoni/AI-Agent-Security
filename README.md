@@ -549,6 +549,7 @@ src/aiasec/
 examples/              harness templates, reference targets (good, vulnerable), model API configs and a tools/list fixture
 docs/                  probe authoring guide, target contract, OWASP mapping, release steps and decision records (adr/)
 tests/                 unit and end-to-end tests
+fuzz/                  Atheris fuzz harnesses, seed corpora and dictionaries (.clusterfuzzlite/ builds them)
 ```
 
 ## Current Limits
@@ -586,6 +587,12 @@ coverage floor (90% of lines and branches) is set in `pyproject.toml`.
 The SARIF schema test is skipped unless `AIASEC_SARIF_SCHEMA` points at a local copy
 of the [SARIF 2.1.0 schema](https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json).
 CI downloads it and fails if that test does not run.
+
+Two more layers run outside the quick loop, both described in
+[docs/testing.md](docs/testing.md): coverage-guided fuzzing of the parsers that read
+untrusted text (Atheris harnesses in `fuzz/`, run by ClusterFuzzLite on every pull
+request and daily, with the seed corpus replayed by the test suite everywhere), and
+weekly mutation testing of the rules evaluator and the release gate with mutmut.
 
 ## Repository wiki
 

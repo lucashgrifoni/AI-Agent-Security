@@ -26,6 +26,10 @@ directory, `.github/requirements-semgrep`, because Dependabot moves a package to
 version in every lock of a directory and semgrep pins some of its dependencies below the
 versions the other locks use.
 
+Fuzzing and mutation testing have their own guide, [docs/testing.md](docs/testing.md):
+what each harness reads, how to run the fuzzers and mutmut locally (both need Linux or
+Docker), and how to read a crash or a surviving mutant.
+
 ## Contribution Rules
 
 - Keep probes deterministic where possible.
@@ -35,6 +39,9 @@ versions the other locks use.
   or private MCP server details.
 - Prefer rules-only evaluators before adding LLM-as-judge behavior.
 - Add tests for new probe schema behavior, evaluators, and output formats.
+- When you change code that reads untrusted text (replies, reports, probe files, tool
+  calls, MCP tool definitions), keep its harness in `fuzz/` in step, and add the input
+  behind any crash you fix to that harness's seed corpus.
 
 ## Pull Request Checklist
 
