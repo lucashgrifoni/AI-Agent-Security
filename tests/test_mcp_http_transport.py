@@ -22,6 +22,7 @@ from aiasec.mcp.http_transport import HttpJsonRpcTransport
 from aiasec.mcp.stdio import (
     LEGACY_PROTOCOL_VERSION,
     MODERN_PROTOCOL_VERSION,
+    McpProtocolError,
     McpRemoteError,
     McpStdioAdapter,
 )
@@ -297,3 +298,14 @@ def test_auto_falls_back_to_initialize_when_a_legacy_server_refuses_the_probe(
         "initialize",
         "notifications/initialized",
     ]
+
+
+def test_a_server_request_inside_the_stream_is_not_answered_and_fails(serve: Any) -> None:
+    # The legacy way to elicit input; aiasec answers input only through input_required.
+    request = {"jsonrpc": "2.0", "id": "srv-1", "method": "elicitation/create", "params": {}}
+    url, _ = serve([Reply(body=DISCOVER), _sse(request, _result(2, TOOL_RESULT))])
+    adapter = McpStdioAdapter(_transport(url))
+    adapter.connect()
+
+    with pytest.raises(McpProtocolError):
+        adapter.call_tool("aiasec_agent", {})

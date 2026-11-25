@@ -2,8 +2,9 @@
 
 `aiasec run --target` sends every probe to an agent under test and scores what the
 agent did. This page is the contract an agent harness implements to be tested. A
-harness is either an MCP server over stdio or an HTTP endpoint; both receive the same
-arguments and report the same two things: the agent's reply and the tools it called.
+harness is an MCP server over stdio, an MCP server over Streamable HTTP, or a plain
+HTTP endpoint; all receive the same arguments and report the same two things: the
+agent's reply and the tools it called.
 
 ## Shape (MCP stdio)
 
@@ -127,6 +128,81 @@ them as well as the tool name:
 
 aiasec never copies argument values into a report or an error message: they are where a
 secret the agent was tricked into sending ends up.
+
+## MCP Streamable HTTP targets
+
+The same MCP server can run as a service and be reached over MCP Streamable HTTP
+instead of stdio. aiasec starts nothing: it POSTs each JSON-RPC message to the
+configured endpoint, agrees on a protocol version (see
+[Protocol version](#protocol-version)), checks `tools/list`, and calls the agent tool
+once per probe turn with the same arguments and result rules as over stdio.
+
+```json
+{
+  "transport": "mcp-http",
+  "url": "https://agent.internal.example/mcp",
+  "headers": {"Authorization": "Bearer ${AIASEC_AGENT_TOKEN}"},
+  "agentTool": "aiasec_agent",
+  "timeoutSeconds": 30,
+  "protocol": "auto"
+}
+```
+
+| Field | Default | Meaning |
+|---|---|---|
+| `url` | required | `http` or `https` URL with a host: the server's MCP endpoint |
+| `headers` | `{}` | extra request headers; `${NAME}` is replaced by environment variable `NAME`, and a missing variable fails the run before any request |
+| `agentTool` | `aiasec_agent` | name of the tool that runs the agent |
+| `timeoutSeconds` | `30` | longest time for one POST, from resolving the host name to the last byte of the reply (1 to 600) |
+| `protocol` | `auto` | as for stdio: `auto` probes the server's MCP era, `modern` requires 2026-07-28, `legacy` skips the probe and uses `initialize` |
+
+The URL and header rules are those of [HTTP targets](#http-targets). One more rule
+protects credentials: a header whose name contains `auth`, `cookie`, `key`,
+`password`, `secret` or `token`, or whose value reads an environment variable, counts
+as a credential, and a config that would send one over plain `http` to a host other
+than this machine (`localhost`, `127.0.0.0/8`, `::1`) is rejected. Use `https`.
+
+Every POST carries these headers, which a config may not set:
+
+| Header | Value |
+|---|---|
+| `Content-Type` | `application/json` |
+| `Accept` | `application/json, text/event-stream` |
+| `Mcp-Method` | the JSON-RPC method, for example `tools/call` |
+| `Mcp-Name` | for `tools/call` the tool name (for `prompts/get` the prompt name, for `resources/read` the URI) |
+| `MCP-Protocol-Version` | the version in the request's `_meta` on a modern server; the version `initialize` agreed on a legacy server, from the request after `initialize` |
+| `Mcp-Session-Id` | only for a legacy server that assigned a session in its `initialize` response; echoed on every later POST |
+
+How aiasec reads the response to each POST:
+
+- `200` with `application/json`: one JSON-RPC message, the answer.
+- `200` with `text/event-stream`: the `data` of each event is a JSON-RPC message.
+  Notifications sent before the answer, such as progress, are skipped; the answer
+  ends the request. Lines end only at CR, LF or CR LF.
+- `202 Accepted` to a notification: accepted, no answer.
+- Any other status, `202` to a request, or a redirect (never followed): the server
+  refused the message. When the body holds a JSON-RPC error answering the request,
+  the run fails with that error; otherwise it fails naming the HTTP status, except
+  that a refused `server/discover` probe means a legacy server (see below).
+- A reply larger than 1 MiB, or a `200` body that is not JSON-RPC, fails the run.
+
+aiasec never opens the optional `GET` event stream and keeps no connection between
+requests, so a server can talk to it only inside the response to a POST. A legacy
+session is not ended with `DELETE`; the server expires it. OAuth authorization is not
+implemented: pass a token you obtained yourself in a header.
+
+`examples/harness/mcp_http_harness.py` is a copyable Streamable HTTP harness, and
+`examples/target-mcp-http-good` and `examples/target-mcp-http-vulnerable` serve the
+reference agents through it on `127.0.0.1:8766`. Start one, then run aiasec against
+its `aiasec-target.json`:
+
+```bash
+python examples/target-mcp-http-vulnerable/server.py --port 8766
+aiasec run --target examples/target-mcp-http-vulnerable/aiasec-target.json --execute --output mcp-http.sarif
+```
+
+`--execute` is required here too: it is the opt-in to send adversarial probes to the
+configured URL.
 
 ## HTTP targets
 
@@ -271,12 +347,14 @@ when at least one did.
 
 ## Reference targets
 
-`examples/harness` holds two copyable templates that implement this contract in
-standard-library Python: `mcp_stdio_harness.py` and `http_harness.py`. Replace their
-`run_agent` with a call into your agent; until you do, they fail the run instead of
-passing it (see [examples/harness/README.md](../examples/harness/README.md)).
+`examples/harness` holds three copyable templates that implement this contract in
+standard-library Python: `mcp_stdio_harness.py`, `mcp_http_harness.py` (which reuses the
+request handling of the stdio one) and `http_harness.py`. Replace their `run_agent`
+with a call into your agent; until you do, they fail the run instead of passing it
+(see [examples/harness/README.md](../examples/harness/README.md)).
 
-`examples/target-mcp-good`, `examples/target-mcp-vulnerable` and
+`examples/target-mcp-good`, `examples/target-mcp-vulnerable`,
+`examples/target-mcp-http-good`, `examples/target-mcp-http-vulnerable` and
 `examples/target-http-vulnerable` serve the two agents in `examples/reference_agents.py`
 through those templates. Neither agent uses an LLM: the good one refuses and calls no
 tools, and the vulnerable one repeats every untrusted instruction and calls every tool
@@ -285,8 +363,8 @@ end to end; they say nothing about how a real model behaves.
 
 ## Protocol version
 
-aiasec speaks both MCP eras and follows the stdio backward-compatibility rules of the
-2026-07-28 revision ([versioning](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning),
+aiasec speaks both MCP eras, over stdio and over Streamable HTTP, and follows the
+backward-compatibility rules of the 2026-07-28 revision ([versioning](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning),
 [stdio](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/stdio#backward-compatibility)).
 
 With `protocol: auto` (the default), aiasec first sends `server/discover` with
@@ -297,12 +375,32 @@ With `protocol: auto` (the default), aiasec first sends `server/discover` with
 | a `DiscoverResult` listing `2026-07-28` | modern server | every request carries `_meta` with `protocolVersion`, `clientInfo` and `clientCapabilities`; no handshake |
 | `UnsupportedProtocolVersionError` (`-32022`) or a `DiscoverResult` without `2026-07-28` | modern server | uses a handshake-based version from the advertised list if there is one, otherwise fails with the server's list |
 | `-32020` (header mismatch) or `-32021` (missing required client capability), the other errors 2026-07-28 defines | modern server that refused the probe | fails the run |
-| any other error, including other codes in the reserved `-32020` to `-32099` range (earlier revisions used it too, for example `-32042` in 2025-11-25), or no reply within `min(5, timeoutSeconds)` seconds, however many notifications arrive | legacy server | `initialize` with `2025-11-25`, then `notifications/initialized`; a late reply to the probe is discarded |
+| any other error, including other codes in the reserved `-32020` to `-32099` range (earlier revisions used it too, for example `-32042` in 2025-11-25), or no reply within `min(5, timeoutSeconds)` seconds, however many notifications arrive; over HTTP also a refusal without a JSON-RPC answer to the probe (for example `400` without a session, `404` or `405`) | legacy server | `initialize` with `2025-11-25`, then `notifications/initialized`; a late reply to the probe is discarded |
 
 A modern harness must also return `"resultType": "complete"`. A result without
 `resultType` counts as complete, as the spec requires for earlier revisions. An
-`input_required` result (multi round-trip requests) or an unknown type fails the run:
-aiasec does not answer elicitation or sampling requests.
+unknown type fails the run.
+
+### Multi round-trip requests (`input_required`)
+
+aiasec declares no client capabilities (`io.modelcontextprotocol/clientCapabilities`
+is `{}`), so a conforming server must not ask it for input: elicitation, roots and
+sampling all need a capability the client declared. A server that still answers
+`tools/call` with `"resultType": "input_required"` gets the answers that do not act for
+it. aiasec sends `tools/call` again, with a new request id, the same `name` and
+`arguments`, an `inputResponses` map with one answer per key of the result's
+`inputRequests`, and the result's `requestState` echoed verbatim when it has one:
+
+| Input request method | aiasec answers |
+|---|---|
+| `elicitation/create` | `{"action": "decline"}` |
+| `roots/list` | `{"roots": []}` |
+| `sampling/createMessage`, or any other method | none: the run fails, because aiasec never samples a model for the server |
+
+aiasec answers at most 5 rounds for one call; a sixth `input_required` result fails
+the run, as does one with neither `inputRequests` nor `requestState` or with a
+malformed request. A request the server sends as its own JSON-RPC message (the
+legacy way to elicit input) is not answered and fails the run.
 
 Use `protocol: legacy` for a legacy server that ignores unknown methods instead of
 answering them, so each run skips the probe wait. Use `protocol: modern` to make a
