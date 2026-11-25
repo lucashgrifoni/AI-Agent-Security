@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator, Mapping
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from aiasec.core.probe import Severity
+from aiasec.core.sarif_reader import iter_results, iter_runs
 from aiasec.core.selection import describe_selection
 
 SEVERITY_ORDER: tuple[Severity, ...] = ("critical", "high", "medium", "low")
@@ -97,7 +98,7 @@ def count_severities(document: Any) -> dict[str, int]:
     """Count SARIF results per probe severity."""
 
     counts: dict[str, int] = dict.fromkeys(SEVERITY_ORDER, 0)
-    for result in _iter_results(document):
+    for result in iter_results(document):
         counts[_severity_of(result)] += 1
     return counts
 
@@ -126,7 +127,7 @@ def count_executed_probes(document: Any) -> int:
     """
 
     total = 0
-    for run in _iter_runs(document):
+    for run in iter_runs(document):
         properties = run.get("properties")
         aiasec = properties.get("aiasec") if isinstance(properties, dict) else None
         executed = aiasec.get("probesExecuted") if isinstance(aiasec, dict) else None
@@ -146,7 +147,7 @@ def read_selections(document: Any) -> list[dict[str, Any]]:
     """
 
     selections = []
-    for run in _iter_runs(document):
+    for run in iter_runs(document):
         properties = run.get("properties")
         aiasec = properties.get("aiasec") if isinstance(properties, dict) else None
         selection = aiasec.get("selection") if isinstance(aiasec, dict) else None
@@ -196,31 +197,6 @@ def gate_report(
         )
     decision = evaluate_gate(count_severities(document), thresholds)
     return decision.model_copy(update={"probes_executed": executed, "selections": selections})
-
-
-def _iter_runs(document: Any) -> Iterator[dict[str, Any]]:
-    if not isinstance(document, dict):
-        raise ValueError("SARIF document must be a JSON object")
-
-    runs = document.get("runs")
-    if not isinstance(runs, list):
-        raise ValueError("SARIF document must contain a runs list")
-
-    for run in runs:
-        if not isinstance(run, dict):
-            raise ValueError("SARIF run must be a JSON object")
-        yield run
-
-
-def _iter_results(document: Any) -> Iterator[dict[str, Any]]:
-    for run in _iter_runs(document):
-        results = run.get("results", [])
-        if not isinstance(results, list):
-            raise ValueError("SARIF run results must be a list")
-        for result in results:
-            if not isinstance(result, dict):
-                raise ValueError("SARIF result must be a JSON object")
-            yield result
 
 
 def _severity_of(result: Mapping[str, Any]) -> Severity:

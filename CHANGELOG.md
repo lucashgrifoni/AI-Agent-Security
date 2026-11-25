@@ -26,6 +26,11 @@ All notable changes to this project will be documented in this file.
   as critical, high, medium or low, plus `tags` (category and OWASP ids), a full
   description, help with the commands that reproduce a failure, and the probe's first
   reference as `helpUri`.
+- Internal: every live target implements one interface (`aiasec.core.target.AgentTarget`),
+  and `aiasec.targets` picks the target a config describes, so the CLI no longer branches
+  on config types. The gate and `compare` share one SARIF reader, and the observation
+  modes live in `aiasec.core.modes` (still importable from `aiasec.outputs.sarif`). No
+  behavior changes.
 - Decision records in `docs/adr/` for five decisions already in force: rules decide
   results, tool calls are never executed, the gate fails closed, GitHub-only
   distribution, and quoted sentinels.

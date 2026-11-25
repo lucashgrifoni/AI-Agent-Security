@@ -8,19 +8,14 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from aiasec import __version__
+from aiasec.core.modes import (  # re-exported: importers of this module still find them
+    SINGLE_OBSERVATION_MODE,
+)
 from aiasec.core.probe import Probe, expectation_id
 from aiasec.core.verdict import Finding, ProbeRunResult
 
 SARIF_VERSION = "2.1.0"
 FINGERPRINT_KEY = "aiasecFinding/v1"
-# Every probe scored against one supplied observation; no attack was sent anywhere.
-SINGLE_OBSERVATION_MODE = "single-observation"
-# Each probe's inputs were sent to a live target over MCP stdio.
-MCP_TARGET_MODE = "mcp-stdio-target"
-# Each probe's inputs were POSTed to a live target over HTTP.
-HTTP_TARGET_MODE = "http-target"
-# Each probe's inputs were sent to a model API; tool calls were recorded, never run.
-MODEL_API_TARGET_MODE = "model-api-target"
 # GitHub code scanning ranks a rule by this score: above 9.0 is critical, 7.0 to 8.9
 # high, 4.0 to 6.9 medium, 0.1 to 3.9 low.
 SECURITY_SEVERITY = {"critical": "9.5", "high": "8.0", "medium": "5.5", "low": "3.0"}
