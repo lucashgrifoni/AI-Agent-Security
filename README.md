@@ -391,6 +391,42 @@ Validate an MCP stdio config without starting a process:
 aiasec mcp tools list --config .\mcp-stdio.json
 ```
 
+### Snapshot, diff and audit MCP tool definitions
+
+MCP does not pin a tool's definition, so a server you approved can change a
+description later, and the model reads the new text on the next connection. Record a
+SHA-256 of every definition, and compare later snapshots against it in CI:
+
+```bash
+aiasec mcp tools snapshot --config path/to/aiasec-target.json --execute --output tools.json
+aiasec mcp tools diff --baseline tools.json --current tools-now.json --exit-on-change
+```
+
+`diff` lists the tools added, removed and changed, with the fields that changed
+(`name`, `title`, `description`, `inputSchema`, `outputSchema`, `annotations`).
+
+`audit` reads every string in each definition, schema property descriptions included,
+and writes SARIF that `aiasec gate` reads. Six rules, all regular expressions:
+
+| Rule | Severity | Finds |
+|---|---|---|
+| `MCPA001` | high | invisible Unicode: tag characters, zero-width characters, bidirectional controls |
+| `MCPA002` | high | terminal escape sequences and other control characters |
+| `MCPA003` | medium | text that orders the model: `<IMPORTANT>`, "ignore previous instructions", "do not tell the user", "before using this tool" |
+| `MCPA004` | high | private keys, credential files, `.env`, `mcp.json` |
+| `MCPA005` | medium | HTML comments and styles that hide text |
+| `MCPA006` | low | a description that names another tool on the same server |
+
+```bash
+aiasec mcp tools audit --fixture examples/mcp-fixtures/tools-list-poisoned.json --output audit.sarif
+aiasec gate --report audit.sarif --max-high 0 --exit-on-fail
+```
+
+Each command takes `--fixture`, or `--config` with `--execute` to start the server;
+`audit` also takes `--snapshot`. The audit complements the probes: it reads what the
+server declares, the probes test what the agent does with it. A clean audit means no
+rule matched, not that the server is safe.
+
 ## Probe Contract
 
 ```yaml

@@ -26,6 +26,7 @@ from aiasec.core.evaluator.rules import TargetObservation, ToolCall
 from aiasec.core.modes import SINGLE_OBSERVATION_MODE
 from aiasec.core.probe import Probe
 from aiasec.core.runner import run_probes, run_probes_against
+from aiasec.core.text import printable
 from aiasec.core.verdict import ProbeRunResult
 from aiasec.httptarget import HttpTargetError
 from aiasec.judge import JudgeConfigError, Opinion, judge_results, load_judge
@@ -114,7 +115,7 @@ def _run_against_target(
             typer.echo(kind.announcement.format(label=agent.label))
             return run_probes_against(probes, _recording(agent.observe, kept)), kind.mode
     except TARGET_ERRORS as exc:
-        typer.echo(f"Target run failed: {exc}", err=True)
+        typer.echo(f"Target run failed: {printable(str(exc))}", err=True)
         raise typer.Exit(code=2) from exc
 
 

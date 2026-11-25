@@ -34,6 +34,15 @@ All notable changes to this project will be documented in this file.
 - Internal: `aiasec.cli` has one module per command group, and `aiasec.modeltarget`
   is a package (config, transcript, provider formats, client). `aiasec.cli.app:app` and
   the public names of `aiasec.modeltarget` are unchanged, and so is every command's help.
+- `aiasec mcp tools snapshot`, `diff` and `audit`. A snapshot records a SHA-256 of each
+  tool definition an MCP server exposes; `diff` names the tools added, removed or
+  changed since a baseline (a "rug pull"), and exits 1 with `--exit-on-change`. `audit`
+  checks every string in the definitions with six deterministic rules (invisible
+  Unicode, terminal escapes, instructions to the model, sensitive paths, hidden markup,
+  references to other tools) and writes SARIF that `aiasec gate` reads.
+- Error messages that repeat text from a target or an MCP server write its control
+  characters and invisible Unicode as escapes, so a malicious server cannot clear or
+  rewrite the terminal through `aiasec run` or `aiasec mcp tools`.
 - Decision records in `docs/adr/` for five decisions already in force: rules decide
   results, tool calls are never executed, the gate fails closed, GitHub-only
   distribution, and quoted sentinels.
