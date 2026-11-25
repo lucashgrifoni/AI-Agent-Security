@@ -31,6 +31,9 @@ All notable changes to this project will be documented in this file.
   on config types. The gate and `compare` share one SARIF reader, and the observation
   modes live in `aiasec.core.modes` (still importable from `aiasec.outputs.sarif`). No
   behavior changes.
+- Internal: `aiasec.cli` has one module per command group, and `aiasec.modeltarget`
+  is a package (config, transcript, provider formats, client). `aiasec.cli.app:app` and
+  the public names of `aiasec.modeltarget` are unchanged, and so is every command's help.
 - Decision records in `docs/adr/` for five decisions already in force: rules decide
   results, tool calls are never executed, the gate fails closed, GitHub-only
   distribution, and quoted sentinels.

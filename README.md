@@ -461,14 +461,14 @@ Initial controls:
 
 ```text
 src/aiasec/
-  cli/                 Typer application
+  cli/                 Typer application, one module per command group
   core/                probe models, runner, verdicts, rules evaluator, release gate, target interface
   mcp/                 MCP stdio adapter, target driver, config, fixtures, and transports
   outputs/             Markdown, SARIF and HTML renderers
   probes/              bundled probe suite, one directory per category
   targets.py           picks and starts the target a config describes
   httptarget.py        HTTP targets and the shared JSON POST with one deadline
-  modeltarget.py       Anthropic, OpenAI-compatible and Ollama model API targets
+  modeltarget/         model API targets: config, transcript, provider formats, client
   judge.py             optional, advisory LLM judge
 examples/              harness templates, reference targets (good, vulnerable), model API configs and a tools/list fixture
 docs/                  probe authoring guide, target contract, OWASP mapping, release steps and decision records (adr/)
