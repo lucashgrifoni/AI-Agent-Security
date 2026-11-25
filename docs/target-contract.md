@@ -8,7 +8,10 @@ arguments and report the same two things: the agent's reply and the tools it cal
 ## Shape (MCP stdio)
 
 The target is an MCP server that speaks JSON-RPC over stdio, one JSON message per
-line. It exposes one tool that runs the agent on one probe turn. aiasec:
+line, encoded as UTF-8 as the MCP stdio transport requires. A Python server on Windows
+reads and writes its pipes in the locale encoding unless told otherwise; the harness
+template sets them to UTF-8. It exposes one tool that runs the agent on one probe turn.
+aiasec:
 
 1. starts the command from the target config (only with `--execute`),
 2. agrees on a protocol version (see [Protocol version](#protocol-version)),

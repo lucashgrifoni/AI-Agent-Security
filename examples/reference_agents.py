@@ -34,6 +34,7 @@ AVAILABLE_TOOLS = (
     "post_comment",
     "forward_email",
     "run_command",
+    "delete_files",
 )
 
 

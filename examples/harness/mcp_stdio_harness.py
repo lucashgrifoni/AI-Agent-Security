@@ -67,6 +67,10 @@ def serve(agent: Agent = run_agent, *, server_name: str = "aiasec-agent-harness"
     """Answer MCP requests on stdin until it closes."""
 
     server_info = {"name": server_name, "version": "0.1.0"}
+    # MCP stdio messages are UTF-8. Python reads and writes the pipes in the locale
+    # encoding (cp1252 on Windows), which would garble any character outside ASCII.
+    sys.stdin.reconfigure(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8")
     for line in sys.stdin:
         if not line.strip():
             continue
