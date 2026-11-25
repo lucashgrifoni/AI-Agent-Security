@@ -7,7 +7,12 @@ from typing import Annotated
 import typer
 
 from aiasec import __version__
-from aiasec.cli.mcp_commands import list_mcp_tools
+from aiasec.cli.mcp_commands import (
+    audit_mcp_tools,
+    diff_mcp_tools,
+    list_mcp_tools,
+    snapshot_mcp_tools,
+)
 from aiasec.cli.probe_commands import list_probes, show_probe
 from aiasec.cli.report_commands import compare, gate
 from aiasec.cli.run_command import run
@@ -18,7 +23,7 @@ app = typer.Typer(help="AI agent and MCP security regression testbed.")
 probes_app = typer.Typer(help="Inspect bundled or custom probes.")
 
 
-mcp_app = typer.Typer(help="Inspect MCP stdio targets through safe local fixtures.")
+mcp_app = typer.Typer(help="Inspect MCP servers: list, snapshot, diff and audit their tools.")
 
 
 mcp_tools_app = typer.Typer(help="Inspect MCP tool metadata.")
@@ -60,3 +65,6 @@ app.command()(compare)
 probes_app.command("list")(list_probes)
 probes_app.command("show")(show_probe)
 mcp_tools_app.command("list")(list_mcp_tools)
+mcp_tools_app.command("snapshot")(snapshot_mcp_tools)
+mcp_tools_app.command("diff")(diff_mcp_tools)
+mcp_tools_app.command("audit")(audit_mcp_tools)
