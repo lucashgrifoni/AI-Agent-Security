@@ -18,6 +18,14 @@ All notable changes to this project will be documented in this file.
 - CI checks types with mypy, requires 90% line and branch coverage, and also runs the
   test suite on Windows and macOS. Type annotations were corrected where mypy found
   them wrong; no behavior changes.
+- Model API targets retry a request that gets HTTP 429, 500, 502, 503, 504 or 529,
+  up to `maxRetries` times (default 2), waiting what `Retry-After` asks (at most 30
+  seconds) or 1, 2 then 4 seconds. Before, one rate limit failed the whole run. The
+  judge, which uses the same client, retries the same way.
+- SARIF rules carry a `security-severity` score, so GitHub code scanning ranks findings
+  as critical, high, medium or low, plus `tags` (category and OWASP ids), a full
+  description, help with the commands that reproduce a failure, and the probe's first
+  reference as `helpUri`.
 - Decision records in `docs/adr/` for five decisions already in force: rules decide
   results, tool calls are never executed, the gate fails closed, GitHub-only
   distribution, and quoted sentinels.

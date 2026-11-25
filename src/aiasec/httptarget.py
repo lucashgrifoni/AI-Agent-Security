@@ -18,9 +18,10 @@ import re
 import socket
 import ssl
 import threading
+from collections.abc import Mapping
 from contextlib import suppress
 from types import TracebackType
-from typing import Any, Literal
+from typing import Any, Literal, NamedTuple
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -31,6 +32,14 @@ from aiasec.core.evaluator.rules import TargetObservation, ToolCall
 from aiasec.core.probe import Probe
 
 MAX_RESPONSE_BYTES = 1_048_576
+
+
+class HttpReply(NamedTuple):
+    """Status, body and lower-cased headers of one HTTP response."""
+
+    status: int
+    body: bytes
+    headers: Mapping[str, str]
 _ENV_REFERENCE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
 
@@ -114,7 +123,7 @@ class HttpAgentTarget:
         self.close()
 
     def _post(self, probe_id: str, arguments: dict[str, Any]) -> tuple[str, list[ToolCall]]:
-        status, payload = post_json(
+        status, payload, _ = post_json(
             self._connection(), self._path, arguments, self._headers, self._config.timeout_seconds
         )
         if status != 200:
@@ -156,8 +165,8 @@ def post_json(
     document: dict[str, Any],
     extra_headers: dict[str, str],
     timeout: float,
-) -> tuple[int, bytes]:
-    """POST a JSON document and return the status and body, within one deadline.
+) -> HttpReply:
+    """POST a JSON document and return the status, body and headers, within one deadline.
 
     Redirects are never followed, so a credential header cannot reach another host.
     A reply larger than MAX_RESPONSE_BYTES raises.
@@ -184,7 +193,12 @@ def post_json(
                 outcome["socket"] = connection.sock
             connection.request("POST", path, body=body, headers=headers)
             response = connection.getresponse()
-            outcome["reply"] = (response.status, response.read(MAX_RESPONSE_BYTES + 1))
+            reply_headers = {name.lower(): value for name, value in response.getheaders()}
+            outcome["reply"] = (
+                response.status,
+                response.read(MAX_RESPONSE_BYTES + 1),
+                reply_headers,
+            )
         except Exception as exc:  # noqa: BLE001 - handed to the calling thread below
             outcome["error"] = exc
         finally:
@@ -216,10 +230,10 @@ def post_json(
     if error is not None:
         raise error
 
-    status, payload = outcome["reply"]
+    status, payload, reply_headers = outcome["reply"]
     if len(payload) > MAX_RESPONSE_BYTES:
         raise HttpTargetError(f"Target reply is larger than {MAX_RESPONSE_BYTES} bytes")
-    return status, payload
+    return HttpReply(status, payload, reply_headers)
 
 
 def _expand(value: str) -> str:
