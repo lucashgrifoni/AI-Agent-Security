@@ -1,15 +1,18 @@
 # Harness templates
 
-Two copyable starting points for putting your own agent behind the
+Three copyable starting points for putting your own agent behind the
 [target contract](../../docs/target-contract.md):
 
 | File | Target config | Use it when |
 |---|---|---|
 | `mcp_stdio_harness.py` | `{"transport": "stdio", "command": ["python", "mcp_stdio_harness.py"]}` | aiasec should start your agent as a process |
+| `mcp_http_harness.py` | `{"transport": "mcp-http", "url": "http://127.0.0.1:8766/mcp"}` | your agent should run as a service that speaks MCP (Streamable HTTP) |
 | `http_harness.py` | `{"transport": "http", "url": "http://127.0.0.1:8765/chat"}` | your agent already runs as a service, or should |
 
-Both are standard-library Python with no dependency on aiasec, so you can copy one
-into your project as is.
+All are standard-library Python with no dependency on aiasec, so you can copy one
+into your project as is. `mcp_http_harness.py` reuses the request handling of
+`mcp_stdio_harness.py`: copy both, and connect `run_agent` in the stdio one (or pass
+your agent function to `main`).
 
 ## Connect your agent
 
@@ -55,8 +58,8 @@ matters:
 
 ## Until you do
 
-The template `run_agent` raises `NotImplementedError`. The MCP harness answers with a
-tool error and the HTTP harness with status 500, and both make `aiasec run` exit 2. A
+The template `run_agent` raises `NotImplementedError`. The MCP harnesses answer with a
+tool error and the HTTP harness with status 500, and all make `aiasec run` exit 2. A
 template that returned a placeholder reply would pass every probe without testing
 anything.
 

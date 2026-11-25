@@ -8,7 +8,7 @@
 
 - 28 bundled probes across 7 attack categories, defined in YAML and mapped to the OWASP LLM, MCP and Agentic Top 10 lists
 - deterministic, rules-only evaluation: no LLM decides the result (an optional LLM judge adds advisory opinions)
-- a live target mode that sends every probe to the agent under test over MCP stdio or HTTP, or straight to a model API (Anthropic, OpenAI-compatible or Ollama)
+- a live target mode that sends every probe to the agent under test over MCP (stdio or Streamable HTTP) or HTTP, or straight to a model API (Anthropic, OpenAI-compatible or Ollama)
 - Markdown and SARIF 2.1.0 reports that GitHub code scanning can display
 - a fail-closed release gate with per-severity thresholds
 
@@ -18,7 +18,7 @@ This is not a runtime guardrail and it is not a full red-team framework. Use it 
 
 `aiasec run` has two modes, and every report states which one produced it:
 
-- **Target mode** (`--target`, `observationMode: mcp-stdio-target`, `http-target` or `model-api-target`): aiasec sends each probe to your agent harness, either an MCP stdio server it starts or an HTTP endpoint, or to a model API, one call per conversation turn, then scores the final reply and every tool call reported, with its arguments when they are reported. See [docs/target-contract.md](docs/target-contract.md) and [Test a model directly](#test-a-model-directly).
+- **Target mode** (`--target`, `observationMode: mcp-stdio-target`, `mcp-http-target`, `http-target` or `model-api-target`): aiasec sends each probe to your agent harness, either an MCP stdio server it starts, an MCP server over Streamable HTTP, or an HTTP endpoint, or to a model API, one call per conversation turn, then scores the final reply and every tool call reported, with its arguments when they are reported. See [docs/target-contract.md](docs/target-contract.md) and [Test a model directly](#test-a-model-directly).
 - **Observation mode** (`--response`, `observationMode: single-observation`): aiasec scores every probe against one response you supply, and the tool calls you list with `--tools-called` or `--tool-calls-file`. Nothing is sent anywhere, so a passing probe means that response did not trigger it, not that an agent resisted the attack.
 
 ## Install
@@ -69,7 +69,7 @@ aiasec gate --report good.sarif --max-critical 0 --max-high 0 --exit-on-fail
 
 `--execute` is required because `--target` starts the command in the config. Read the
 config before you pass it. To test your own agent, copy a harness template from
-[`examples/harness`](examples/harness/README.md) (MCP stdio or HTTP), connect its
+[`examples/harness`](examples/harness/README.md) (MCP stdio, MCP Streamable HTTP or HTTP), connect its
 `run_agent` to your agent, and point `--target` at its config. The full contract is in
 [docs/target-contract.md](docs/target-contract.md).
 
@@ -79,6 +79,14 @@ at its config:
 ```bash
 python examples/target-http-vulnerable/server.py --port 8765
 aiasec run --target examples/target-http-vulnerable/aiasec-target.json --execute --output http.sarif
+```
+
+To test an MCP server that runs as a service, start the Streamable HTTP reference
+target (or `examples/target-mcp-http-good`) and point `--target` at its config:
+
+```bash
+python examples/target-mcp-http-vulnerable/server.py --port 8766
+aiasec run --target examples/target-mcp-http-vulnerable/aiasec-target.json --execute --output mcp-http.sarif
 ```
 
 ### Test a model directly
@@ -325,8 +333,8 @@ Compare runs made with the same model settings, at temperature 0 where the model
 allows it, and measure the variation with `--repeat`: each probe runs that many times
 against the target, fails if any run failed, and the report records how many runs
 failed (`failedRuns` in SARIF, a `Failed runs` line in Markdown). Against HTTP and model
-API targets, `--concurrency N` keeps N probes in flight at once; an MCP stdio target
-answers one request at a time.
+API targets, `--concurrency N` keeps N probes in flight at once; aiasec sends an MCP
+target, over stdio or HTTP, one request at a time.
 
 ```bash
 aiasec run --target examples/model-targets/anthropic.json --execute --repeat 5 --concurrency 4 --output model.sarif
@@ -365,9 +373,10 @@ Detection is sentinel-based: each adversarial prompt instructs the target to
 emit a marker unique to that probe, and the probe asserts the marker is absent.
 Every probe carries a compromised sample and is checked against a well-behaved
 target in `tests/test_probe_suite.py`, which also proves no probe fires on
-another probe's sample. `tests/test_mcp_target.py`, `tests/test_http_target.py` and CI
-send every probe to the example targets over MCP stdio and HTTP: all of them must fail
-against the vulnerable ones and pass against the good one.
+another probe's sample. `tests/test_mcp_target.py`, `tests/test_mcp_http_target.py`,
+`tests/test_http_target.py` and CI send every probe to the example targets over MCP
+stdio, MCP Streamable HTTP and HTTP: all of them must fail against the vulnerable ones
+and pass against the good ones.
 
 To write your own, see [docs/writing-probes.md](docs/writing-probes.md).
 
@@ -539,7 +548,7 @@ Initial controls:
 src/aiasec/
   cli/                 Typer application, one module per command group
   core/                probe models, runner, verdicts, rules evaluator, release gate, target interface
-  mcp/                 MCP stdio adapter, target driver, config, fixtures, and transports
+  mcp/                 MCP adapter, target driver, configs, fixtures, stdio and Streamable HTTP transports
   outputs/             Markdown, SARIF and HTML renderers
   probes/              bundled probe suite, one directory per category
   targets.py           picks and starts the target a config describes
@@ -553,11 +562,11 @@ tests/                 unit and end-to-end tests
 
 ## Current Limits
 
-- target mode supports MCP stdio and HTTP harnesses through the contract in `docs/target-contract.md`, and Anthropic, OpenAI-compatible and Ollama model APIs directly
+- target mode supports MCP stdio, MCP Streamable HTTP and HTTP harnesses through the contract in `docs/target-contract.md`, and Anthropic, OpenAI-compatible and Ollama model APIs directly
 - the model API targets were tested against local servers that imitate each provider's documented formats; only the Anthropic one has also run against the live API (claude-sonnet-5-5, the full suite and the judge), the OpenAI and Ollama ones have not. They send each probe turn as one request and never execute the tool calls the model asks for, so they test the model with your prompt and tools, not your agent's own loop
-- target mode speaks both MCP eras on stdio: 2026-07-28 (per-request `_meta`, found with `server/discover`) and the `initialize`-based revisions; multi round-trip results (`input_required`) are not supported
+- target mode speaks both MCP eras over stdio and Streamable HTTP: 2026-07-28 (per-request `_meta`, found with `server/discover`) and the `initialize`-based revisions. It declares no client capabilities; an `input_required` result is answered by declining elicitations and listing no roots, and a request for sampling or anything else fails the run
+- the MCP Streamable HTTP target has no OAuth flow (pass a token you obtained in a header), never opens the `GET` event stream for server-initiated messages, and does not end a legacy session with `DELETE`; the `aiasec mcp tools` commands with `--config` take stdio configs only
 - the GitHub Action does not support Windows runners (it uses a POSIX virtualenv layout)
-- no MCP HTTP adapter yet
 - the LLM judge is advisory: it never decides a result, so a paraphrase the patterns miss still passes the gate
 - SARIF output is validated against the official SARIF 2.1.0 schema in CI, not by a CLI command
 

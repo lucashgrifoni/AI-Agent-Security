@@ -115,14 +115,15 @@ def _run_against_target(
         raise typer.Exit(code=2)
     if concurrency > 1 and not kind.concurrent:
         typer.echo(
-            "--concurrency needs an HTTP or model API target; an MCP stdio server answers "
+            "--concurrency needs an HTTP or model API target; aiasec sends an MCP target "
             "one request at a time.",
             err=True,
         )
         raise typer.Exit(code=2)
     try:
         with kind.start(config) as agent:
-            typer.echo(kind.announcement.format(label=agent.label))
+            # A label may carry text the target sent, such as its protocol version.
+            typer.echo(printable(kind.announcement.format(label=agent.label), keep_newlines=False))
             results = run_probes_against(
                 probes,
                 _recording(agent.observe, kept),

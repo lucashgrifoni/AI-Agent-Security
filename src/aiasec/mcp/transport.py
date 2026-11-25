@@ -31,6 +31,14 @@ class McpTransportTimeout(McpTransportError):
     """Raised when no message arrives before the receive deadline."""
 
 
+class McpTransportRejected(McpTransportError):
+    """Raised when the peer refused a message without a JSON-RPC answer to it.
+
+    Over HTTP: an error status, a redirect, or 202 for a request. A legacy server
+    refuses the modern discovery probe this way, so connect() reads it as legacy.
+    """
+
+
 class JsonRpcTransport(Protocol):
     """Minimal fakeable transport contract for JSON-RPC messages."""
 

@@ -233,3 +233,26 @@ def test_an_absent_result_type_counts_as_complete() -> None:
     adapter.connect()
 
     assert adapter.call_tool("aiasec_agent", {}) == {"content": []}
+
+
+@pytest.mark.parametrize(
+    "version",
+    ["2025-11-25\x1b]0;pwned\x07", "1999-01-01", 20251125],
+    ids=["control-characters", "unknown", "not-a-string"],
+)
+def test_a_legacy_version_aiasec_does_not_speak_ends_the_handshake(version: Any) -> None:
+    transport = ScriptedTransport([_result(1, {**INITIALIZE_OK, "protocolVersion": version})])
+
+    with pytest.raises(McpProtocolError, match="protocol version"):
+        McpStdioAdapter(transport).connect(mode="legacy")
+
+    assert _methods(transport) == ["initialize"]
+
+
+def test_a_legacy_answer_without_a_version_keeps_the_offered_one() -> None:
+    initialize = {key: value for key, value in INITIALIZE_OK.items() if key != "protocolVersion"}
+    transport = ScriptedTransport([_result(1, initialize)])
+
+    session = McpStdioAdapter(transport).connect(mode="legacy")
+
+    assert session.protocol_version == LEGACY_PROTOCOL_VERSION

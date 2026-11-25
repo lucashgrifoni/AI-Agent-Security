@@ -12,13 +12,14 @@ cannot be forwarded to another host) and it only speaks http and https.
 from __future__ import annotations
 
 import http.client
+import ipaddress
 import json
 import os
 import re
 import socket
 import ssl
 import threading
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextlib import suppress
 from types import TracebackType
 from typing import Any, Literal, NamedTuple
@@ -32,6 +33,8 @@ from aiasec.core.evaluator.rules import TargetObservation, ToolCall
 from aiasec.core.probe import Probe
 
 MAX_RESPONSE_BYTES = 1_048_576
+# A header whose name contains one of these is treated as a credential.
+CREDENTIAL_HEADER_WORDS = ("auth", "cookie", "key", "password", "secret", "token")
 
 
 class HttpReply(NamedTuple):
@@ -40,11 +43,19 @@ class HttpReply(NamedTuple):
     status: int
     body: bytes
     headers: Mapping[str, str]
+
+
+# (reply headers, newest body chunk) -> whether the body read so far is enough.
+ReplyComplete = Callable[[Mapping[str, str], bytes], bool]
 _ENV_REFERENCE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
 
 class HttpTargetError(RuntimeError):
     """Raised when an HTTP target does not honor the aiasec target contract."""
+
+
+class HttpTargetTimeout(HttpTargetError):
+    """Raised when a request does not complete within its deadline."""
 
 
 class HttpTargetConfig(BaseModel):
@@ -63,20 +74,62 @@ class HttpTargetConfig(BaseModel):
     def require_http_url_with_host(cls, value: str) -> str:
         """Accept only http and https URLs that name a host."""
 
-        parts = urlsplit(value)
-        if parts.scheme not in {"http", "https"} or not parts.hostname:
-            raise ValueError("url must be an http or https URL with a host")
-        return value
+        return check_http_url(value)
 
     @field_validator("headers")
     @classmethod
     def reject_malformed_headers(cls, value: dict[str, str]) -> dict[str, str]:
         """Reject header names or values that could split the request."""
 
-        for name, item in value.items():
-            if not name.strip() or any(ch in name + item for ch in "\r\n\x00"):
-                raise ValueError("header names and values must not be empty or contain CR, LF, NUL")
-        return value
+        return check_headers(value)
+
+
+def check_http_url(value: str) -> str:
+    """Accept only http and https URLs that name a host (shared config rule)."""
+
+    parts = urlsplit(value)
+    if parts.scheme not in {"http", "https"} or not parts.hostname:
+        raise ValueError("url must be an http or https URL with a host")
+    return value
+
+
+def check_headers(value: dict[str, str]) -> dict[str, str]:
+    """Reject header names or values that could split the request (shared config rule)."""
+
+    for name, item in value.items():
+        if not name.strip() or any(ch in name + item for ch in "\r\n\x00"):
+            raise ValueError("header names and values must not be empty or contain CR, LF, NUL")
+    return value
+
+
+def is_loopback(host: str) -> bool:
+    """Whether a URL host is this machine, so plain http never leaves it."""
+
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def carries_credential(name: str, value: str) -> bool:
+    """Whether a configured header likely carries a secret.
+
+    Its name says so (Authorization, Cookie, X-Api-Key, X-Auth-Token...), or its value
+    reads an environment variable, where the docs tell users to keep secrets.
+    """
+
+    lowered = name.lower()
+    return any(word in lowered for word in CREDENTIAL_HEADER_WORDS) or bool(
+        _ENV_REFERENCE.search(value)
+    )
+
+
+def expand_headers(headers: Mapping[str, str]) -> dict[str, str]:
+    """Header values with their ${NAME} references resolved from the environment."""
+
+    return {name: _expand(value) for name, value in headers.items()}
 
 
 class HttpAgentTarget:
@@ -95,7 +148,7 @@ class HttpAgentTarget:
     def start(cls, config: HttpTargetConfig) -> HttpAgentTarget:
         """Resolve header references before any request is sent."""
 
-        return cls(config, {name: _expand(value) for name, value in config.headers.items()})
+        return cls(config, expand_headers(config.headers))
 
     @property
     def label(self) -> str:
@@ -165,11 +218,15 @@ def post_json(
     document: dict[str, Any],
     extra_headers: dict[str, str],
     timeout: float,
+    *,
+    complete: ReplyComplete | None = None,
 ) -> HttpReply:
     """POST a JSON document and return the status, body and headers, within one deadline.
 
     Redirects are never followed, so a credential header cannot reach another host.
-    A reply larger than MAX_RESPONSE_BYTES raises.
+    A reply larger than MAX_RESPONSE_BYTES raises. The body is read until the server
+    closes it, or until `complete`, given the headers and each chunk as it arrives,
+    says the reply holds what the caller needs.
     """
 
     body = json.dumps(document).encode("utf-8")
@@ -196,7 +253,7 @@ def post_json(
             reply_headers = {name.lower(): value for name, value in response.getheaders()}
             outcome["reply"] = (
                 response.status,
-                response.read(MAX_RESPONSE_BYTES + 1),
+                _read_body(response, reply_headers, complete),
                 reply_headers,
             )
         except Exception as exc:  # noqa: BLE001 - handed to the calling thread below
@@ -218,10 +275,10 @@ def post_json(
         if sock is not None:
             with suppress(OSError):
                 sock.shutdown(socket.SHUT_RDWR)
-        raise HttpTargetError(f"Target timed out after {timeout} s")
+        raise HttpTargetTimeout(f"Target timed out after {timeout} s")
     error = outcome.get("error")
     if isinstance(error, TimeoutError):
-        raise HttpTargetError(f"Target timed out after {timeout} s") from error
+        raise HttpTargetTimeout(f"Target timed out after {timeout} s") from error
     if isinstance(error, (OSError, http.client.HTTPException)):
         raise HttpTargetError(f"HTTP request to the target failed: {error}") from error
     if isinstance(error, ValueError):
@@ -234,6 +291,24 @@ def post_json(
     if len(payload) > MAX_RESPONSE_BYTES:
         raise HttpTargetError(f"Target reply is larger than {MAX_RESPONSE_BYTES} bytes")
     return HttpReply(status, payload, reply_headers)
+
+
+def _read_body(
+    response: http.client.HTTPResponse,
+    headers: Mapping[str, str],
+    complete: ReplyComplete | None,
+) -> bytes:
+    """The body as it arrives, up to MAX_RESPONSE_BYTES + 1 bytes or until `complete`."""
+
+    body = bytearray()
+    while len(body) <= MAX_RESPONSE_BYTES:
+        chunk = response.read1(MAX_RESPONSE_BYTES + 1 - len(body))
+        if not chunk:
+            break
+        body += chunk
+        if complete is not None and complete(headers, chunk):
+            break
+    return bytes(body)
 
 
 def _expand(value: str) -> str:
