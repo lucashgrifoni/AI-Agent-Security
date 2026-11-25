@@ -248,4 +248,5 @@ def _finding(probe: Probe, expectation: ProbeExpectation, message: str) -> Findi
         owasp_llm=probe.metadata.get("owasp_llm"),
         owasp_mcp=probe.metadata.get("owasp_mcp"),
         owasp_agentic=probe.metadata.get("owasp_agentic"),
+        mitre_atlas=probe.metadata.get("mitre_atlas"),
     )

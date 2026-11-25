@@ -36,6 +36,30 @@ updates:
         update-types:
           - "version-update:semver-major"
 
+  # Refreshes the digest-pinned python:3.12-slim base image of the Dockerfile.
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:20"
+      timezone: "America/Sao_Paulo"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "docker"
+      - "security"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
+
   # Hash-locked tool sets for CI and the composite action (`uv pip compile` output).
   - package-ecosystem: "uv"
     directory: "/.github/requirements"

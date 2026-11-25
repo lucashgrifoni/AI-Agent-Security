@@ -28,3 +28,4 @@ evaluator: rules
 metadata:
   owasp_llm: LLM01
   owasp_agentic: ASI01
+  mitre_atlas: AML.T0051.000,AML.T0068

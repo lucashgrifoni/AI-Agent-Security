@@ -169,3 +169,6 @@ def test_the_locks_cover_what_pyproject_declares() -> None:
     assert runtime | backend <= set(_pins(LOCKS / "action.txt"))
     assert runtime | dev | backend <= set(_pins(LOCKS / "ci.txt"))
     assert backend <= set(_pins(LOCKS / "build.txt"))
+    # The container image installs this set: the runtime dependencies, without the backend.
+    assert runtime <= set(_pins(LOCKS / "runtime.txt"))
+    assert not backend & set(_pins(LOCKS / "runtime.txt"))

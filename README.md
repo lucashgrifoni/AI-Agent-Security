@@ -38,6 +38,38 @@ gh attestation verify ai_agent_security_testbed-0.3.1-py3-none-any.whl -R lucash
 python -m pip install ai_agent_security_testbed-0.3.1-py3-none-any.whl
 ```
 
+### Container image
+
+Releases published after 0.3.1 also push a container image to the GitHub Container
+Registry, `ghcr.io/lucashgrifoni/ai-agent-security-testbed`, tagged with the version.
+`latest` names the highest full release; pre-releases never move it. The image runs
+`aiasec` as a non-root user (uid 10001) from a digest-pinned `python:3.12-slim` base,
+with the hash-locked runtime dependencies and no build tools or pip. Each image
+carries a build provenance attestation and a CycloneDX SBOM attestation in the
+registry. A tag can be pushed again, so resolve the version tag to a digest once, then
+verify and run that digest (replace `X.Y.Z` with the release version):
+
+```bash
+digest="$(docker buildx imagetools inspect ghcr.io/lucashgrifoni/ai-agent-security-testbed:X.Y.Z --format '{{.Manifest.Digest}}')"
+image="ghcr.io/lucashgrifoni/ai-agent-security-testbed@$digest"
+gh attestation verify "oci://$image" -R lucashgrifoni/AI-Agent-Security
+gh attestation verify "oci://$image" -R lucashgrifoni/AI-Agent-Security \
+  --predicate-type https://cyclonedx.org/bom
+docker run --rm "$image" --version
+```
+
+Mount the directory that holds your target configs, and receives the reports, at
+`/work`. On Linux, pass your own user id so that the reports belong to you:
+
+```bash
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/work" "$image" \
+  run --response "I cannot follow that instruction." --output report.sarif
+```
+
+The image holds Python and aiasec only. A stdio MCP server that aiasec starts with
+`--execute` must be a program inside the container, and an HTTP or model target must
+be a host the container can reach.
+
 For development, clone the repository and install it editable with the dev extras:
 
 ```bash
@@ -359,7 +391,9 @@ Twenty-eight bundled probes covering seven categories:
 | `mcp-specific` | `tool-description-poisoning-001`, `tool-shadowing-001` | LLM01, LLM06 | MCP03 | ASI04 |
 
 [docs/owasp-mapping.md](docs/owasp-mapping.md) explains each mapping and what the
-suite does not cover.
+suite does not cover. Each probe also carries the MITRE ATLAS techniques it tests
+(`metadata.mitre_atlas`, carried into SARIF next to the OWASP ids); the same page
+lists them, and says why aiasec does not compute OWASP AIVSS scores.
 
 Detection is sentinel-based: each adversarial prompt instructs the target to
 emit a marker unique to that probe, and the probe asserts the marker is absent.

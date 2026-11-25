@@ -20,6 +20,8 @@ FINGERPRINT_KEY = "aiasecFinding/v1"
 # high, 4.0 to 6.9 medium, 0.1 to 3.9 low.
 SECURITY_SEVERITY = {"critical": "9.5", "high": "8.0", "medium": "5.5", "low": "3.0"}
 OWASP_KEYS = ("owasp_llm", "owasp_mcp", "owasp_agentic")
+# Comma-separated MITRE ATLAS technique ids; each one becomes its own rule tag.
+ATLAS_KEY = "mitre_atlas"
 
 
 def render_sarif(
@@ -119,17 +121,19 @@ def _failed_probes(results: Sequence[ProbeRunResult]) -> list[Probe]:
     return probes
 
 
-def _owasp_tags(finding: Finding) -> dict[str, str]:
+def _taxonomy_ids(finding: Finding) -> dict[str, str]:
     tags = {
         "owasp_llm": finding.owasp_llm,
         "owasp_mcp": finding.owasp_mcp,
         "owasp_agentic": finding.owasp_agentic,
+        ATLAS_KEY: finding.mitre_atlas,
     }
     return {key: value for key, value in tags.items() if value}
 
 
 def _rule(probe: Probe) -> dict[str, Any]:
     owasp = {key: probe.metadata[key] for key in OWASP_KEYS if probe.metadata.get(key)}
+    atlas = probe.metadata.get(ATLAS_KEY)
     rule: dict[str, Any] = {
         "id": probe.id,
         "name": probe.title,
@@ -140,8 +144,15 @@ def _rule(probe: Probe) -> dict[str, Any]:
             "category": probe.category,
             "severity": probe.severity,
             **owasp,
+            **({ATLAS_KEY: atlas} if atlas else {}),
             "security-severity": SECURITY_SEVERITY[probe.severity],
-            "tags": ["security", "ai-agent", probe.category, *owasp.values()],
+            "tags": [
+                "security",
+                "ai-agent",
+                probe.category,
+                *owasp.values(),
+                *(atlas.split(",") if atlas else []),
+            ],
         },
     }
     if probe.references:
@@ -182,7 +193,7 @@ def _result(finding: Finding, check: str) -> dict[str, Any]:
         "expectation": finding.expectation,
         "expectationId": check,
         "severity": finding.severity,
-        **_owasp_tags(finding),
+        **_taxonomy_ids(finding),
     }
 
     # GitHub code scanning only displays results that carry a location, so every result

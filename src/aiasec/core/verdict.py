@@ -21,6 +21,7 @@ class Finding(BaseModel):
     owasp_llm: str | None = None
     owasp_mcp: str | None = None
     owasp_agentic: str | None = None
+    mitre_atlas: str | None = None
     expectation_index: int = 0
     source: str | None = None
 
