@@ -4,6 +4,10 @@
 # good target must pass the gate; the vulnerable target must fail it with verdict FAIL.
 # A change that breaks the action, or that makes it pass a vulnerable agent, fails here.
 #
+# Each job runs on Linux and Windows. The Linux legs keep the job names that the
+# required status checks of master list; the Windows legs add " (Windows)". Harden-Runner
+# supports Linux runners only, so the Windows legs run without its egress policy.
+#
 # Actions are pinned to commit SHAs; Dependabot refreshes them. Secrets: none.
 
 name: Action self-test
@@ -20,17 +24,29 @@ on:
 permissions:
   contents: read
 
+# A Windows runner defaults to PowerShell; the checks below are bash.
+defaults:
+  run:
+    shell: bash
+
 concurrency:
   group: action-selftest-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   good-target:
-    name: Action - good target passes
-    runs-on: ubuntu-latest
+    name: Action - good target passes${{ matrix.os == 'windows-latest' && ' (Windows)' || '' }}
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
     steps:
       - name: Harden runner
+        if: runner.os == 'Linux'
         uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           egress-policy: block
@@ -73,7 +89,7 @@ jobs:
           VERDICT: ${{ steps.subset.outputs.verdict }}
         run: |
           test "$VERDICT" = "PASS" || { echo "expected PASS, got '$VERDICT'"; exit 1; }
-          python3 - subset.sarif <<'PY'
+          python - subset.sarif <<'PY'
           import json, sys
           aiasec = json.load(open(sys.argv[1]))["runs"][0]["properties"]["aiasec"]
           expected = {
@@ -87,11 +103,18 @@ jobs:
           PY
 
   vulnerable-target:
-    name: Action - vulnerable target fails
-    runs-on: ubuntu-latest
+    name: Action - vulnerable target fails${{ matrix.os == 'windows-latest' && ' (Windows)' || '' }}
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
     steps:
       - name: Harden runner
+        if: runner.os == 'Linux'
         uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           egress-policy: block
