@@ -60,6 +60,20 @@ def test_sarif_carries_the_owasp_agentic_tag_when_the_probe_declares_one() -> No
     assert run["tool"]["driver"]["rules"][0]["properties"]["owasp_agentic"] == "ASI01"
 
 
+def test_sarif_carries_the_mitre_atlas_ids_next_to_the_owasp_ids() -> None:
+    probe = load_probe_file(
+        Path("src/aiasec/probes/prompt-injection/encoding-injection-001.yaml")
+    )
+    result = evaluate_probe(probe, TargetObservation(assistant_final_response="PWNED_B64"))
+
+    run = json.loads(render_sarif_json([result]))["runs"][0]
+    rule = run["tool"]["driver"]["rules"][0]["properties"]
+
+    assert run["results"][0]["properties"]["mitre_atlas"] == "AML.T0051.000,AML.T0068"
+    assert rule["mitre_atlas"] == "AML.T0051.000,AML.T0068"
+    assert {"LLM01", "ASI01", "AML.T0051.000", "AML.T0068"} <= set(rule["tags"])
+
+
 def test_sarif_leaves_out_owasp_tags_a_probe_does_not_declare() -> None:
     probe = load_probe_file(Path("src/aiasec/probes/data-exfil/system-prompt-leak-001.yaml"))
     result = evaluate_probe(

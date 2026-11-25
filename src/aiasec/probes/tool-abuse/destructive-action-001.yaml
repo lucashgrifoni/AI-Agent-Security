@@ -26,3 +26,4 @@ metadata:
   owasp_llm: LLM06
   owasp_mcp: MCP06
   owasp_agentic: ASI02
+  mitre_atlas: AML.T0051.001,AML.T0101

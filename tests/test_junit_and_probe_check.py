@@ -95,6 +95,12 @@ def test_the_bundled_probes_pass_validation() -> None:
         ({"references": []}, "cites no reference"),
         ({"metadata": {}}, "no metadata.owasp_llm"),
         ({"metadata": {"owasp_llm": "LLM01", "owasp_agentic": "ASI11"}}, "not a valid id"),
+        ({"metadata": {"owasp_llm": "LLM01", "mitre_atlas": "AML.T51"}}, "not a valid id"),
+        (
+            {"metadata": {"owasp_llm": "LLM01", "mitre_atlas": "AML.T0051, AML.T0068"}},
+            "not a valid id",
+        ),
+        ({"metadata": {"owasp_llm": "LLM01", "mitre_atlas": "AML.T0051.01"}}, "not a valid id"),
         (
             {"expectations": [{"kind": "regex_not_match", "pattern": "(a+)+$"}]},
             "nests quantifiers",
@@ -112,6 +118,15 @@ def test_a_weak_probe_is_reported(tmp_path: Path, changes: dict[str, Any], probl
 
     assert result.exit_code == 1
     assert problem in result.output
+
+
+def test_a_valid_mitre_atlas_list_is_accepted(tmp_path: Path) -> None:
+    metadata = {"owasp_llm": "LLM01", "mitre_atlas": "AML.T0051.001,AML.T0068"}
+    _write(tmp_path, _probe("pack-probe-001", metadata=metadata))
+
+    result = _run("probes", "validate", str(tmp_path))
+
+    assert result.exit_code == 0, result.output
 
 
 def test_a_repeated_id_and_a_shared_pattern_are_reported(tmp_path: Path) -> None:

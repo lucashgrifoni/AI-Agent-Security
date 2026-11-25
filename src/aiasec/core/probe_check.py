@@ -3,8 +3,8 @@
 The bundled probes are held to that bar by the test suite. A probe pack written by
 someone else has no such tests, so `aiasec probes validate` runs the checks a machine
 can make: the file loads, each pattern compiles and has no obvious catastrophic
-backtracking, ids and patterns are unique, the OWASP ids have the right shape, a
-reference is given, and a plain refusal does not fail the probe.
+backtracking, ids and patterns are unique, the OWASP and MITRE ATLAS ids have the
+right shape, a reference is given, and a plain refusal does not fail the probe.
 """
 
 from __future__ import annotations
@@ -19,10 +19,12 @@ from pydantic import ValidationError
 from aiasec.core.evaluator.rules import TargetObservation, evaluate_probe
 from aiasec.core.probe import Probe, load_probe_file
 
-OWASP_ID = {
+TAXONOMY_ID = {
     "owasp_llm": re.compile(r"^LLM(0[1-9]|10)$"),
     "owasp_mcp": re.compile(r"^MCP(0[1-9]|10)$"),
     "owasp_agentic": re.compile(r"^ASI(0[1-9]|10)$"),
+    # One technique id or several, comma-separated with no spaces: AML.T0051.001,AML.T0068
+    "mitre_atlas": re.compile(r"^AML\.T\d{4}(\.\d{3})?(,AML\.T\d{4}(\.\d{3})?)*$"),
 }
 # A group that ends in a quantifier and is itself quantified: (a+)+, (.*)*, (x|y+){2,}.
 NESTED_QUANTIFIER = re.compile(r"\((?:[^()\\]|\\.)*[*+}]\)[*+{]")
@@ -68,7 +70,7 @@ def _probe_problems(probe: Probe) -> list[ProbeProblem]:
         found.append("cites no reference")
     if not probe.metadata.get("owasp_llm"):
         found.append("has no metadata.owasp_llm id")
-    for key, shape in OWASP_ID.items():
+    for key, shape in TAXONOMY_ID.items():
         value = probe.metadata.get(key)
         if value and not shape.match(value):
             found.append(f"metadata.{key} {value!r} is not a valid id")

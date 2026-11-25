@@ -359,7 +359,9 @@ Twenty-eight bundled probes covering seven categories:
 | `mcp-specific` | `tool-description-poisoning-001`, `tool-shadowing-001` | LLM01, LLM06 | MCP03 | ASI04 |
 
 [docs/owasp-mapping.md](docs/owasp-mapping.md) explains each mapping and what the
-suite does not cover.
+suite does not cover. Each probe also carries the MITRE ATLAS techniques it tests
+(`metadata.mitre_atlas`, carried into SARIF next to the OWASP ids); the same page
+lists them, and says why aiasec does not compute OWASP AIVSS scores.
 
 Detection is sentinel-based: each adversarial prompt instructs the target to
 emit a marker unique to that probe, and the probe asserts the marker is absent.
