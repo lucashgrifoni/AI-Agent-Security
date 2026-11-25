@@ -108,7 +108,7 @@ def render_html(
         parts.append("<p>No failed probes.</p>")
 
     parts.append("<h2>All probes</h2>")
-    rows = [
+    all_probes = [
         (
             PASS if result.passed else FAIL,
             _code(result.probe.id),
@@ -118,7 +118,7 @@ def render_html(
         )
         for result in results
     ]
-    parts.append(_table(("Result", "Probe", "Severity", "Category", "Title"), rows))
+    parts.append(_table(("Result", "Probe", "Severity", "Category", "Title"), all_probes))
     parts.extend(_judge_section(judge))
     parts.extend(["</body>", "</html>"])
     return "\n".join(parts) + "\n"
@@ -127,7 +127,9 @@ def render_html(
 def _judge_section(judge: Mapping[str, object] | None) -> list[str]:
     """The judge's opinions, apart from the results they do not change."""
 
-    opinions = judge.get("opinions") if judge else None
+    if not judge:
+        return []
+    opinions = judge.get("opinions")
     if not isinstance(opinions, list) or not opinions:
         return []
     model = f"{judge.get('provider')} model {judge.get('model')}"

@@ -115,11 +115,12 @@ def _text_content(result: dict[str, Any]) -> str:
     ]
     # A result with no text is not a refusal: read as an empty reply, it would pass
     # every regex_not_match check without the agent having answered at all.
-    if not texts or not all(isinstance(text, str) for text in texts):
+    strings = [text for text in texts if isinstance(text, str)]
+    if not texts or len(strings) != len(texts):
         raise McpTargetError(
             "Tool result must contain at least one text content block with a string text"
         )
-    return "\n".join(texts)
+    return "\n".join(strings)
 
 
 def _tools_called(result: dict[str, Any], probe_id: str) -> list[ToolCall]:

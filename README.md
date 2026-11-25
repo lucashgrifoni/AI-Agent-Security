@@ -498,9 +498,13 @@ count whether quoted or not. See
 ## Development
 
 ```bash
-python -m pytest
+python -m pytest --cov
 python -m ruff check .
+python -m mypy
 ```
+
+CI runs the same three on Linux, and the test suite on Windows and macOS too. The
+coverage floor (90% of lines and branches) is set in `pyproject.toml`.
 
 The SARIF schema test is skipped unless `AIASEC_SARIF_SCHEMA` points at a local copy
 of the [SARIF 2.1.0 schema](https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json).

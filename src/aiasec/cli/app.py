@@ -314,8 +314,8 @@ def _run_against_target(
         if isinstance(config, HttpTargetConfig):
             action = f"send probes to {config.url}"
         elif isinstance(config, ModelTargetConfig):
-            model = f"the {config.transport} model {config.model}"
-            action = f"send probes to {model} at {config.endpoint}"
+            described = f"the {config.transport} model {config.model}"
+            action = f"send probes to {described} at {config.endpoint}"
         else:
             action = f"start {config.command!r}"
         typer.echo(
@@ -477,7 +477,7 @@ def run(
         typer.echo(f"Asking the judge, the {judge.label}, about {asked} probe(s).")
         opinions = _opinions(judge, judge_results(results, kept, judge))
 
-    renderers = {
+    renderers: dict[OutputFormat, Callable[..., str]] = {
         OutputFormat.sarif: render_sarif_json,
         OutputFormat.html: render_html,
         OutputFormat.markdown: render_markdown,

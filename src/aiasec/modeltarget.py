@@ -608,7 +608,7 @@ def _anthropic_reply(reply: dict[str, Any]) -> tuple[str, list[ToolCall], Cut]:
     text, calls = _observed(
         "\n".join(texts), calls, refused=reply.get("stop_reason") == "refusal"
     )
-    return text, calls, ANTHROPIC_STOPS.get(reply.get("stop_reason"), "unfinished")
+    return text, calls, ANTHROPIC_STOPS.get(str(reply.get("stop_reason")), "unfinished")
 
 
 def _openai_tools(transcript: Transcript) -> list[dict[str, Any]]:
@@ -633,14 +633,14 @@ def _chat_messages(transcript: Transcript, *, ollama: bool) -> list[dict[str, An
         if entry["kind"] in ("user", "assistant"):
             messages.append({"role": entry["kind"], "content": entry["text"]})
         elif entry["kind"] == "call":
+            call: dict[str, Any]
             if ollama:
                 arguments = _arguments_object(entry.get("arguments"))
                 call = {"function": {"name": entry["name"], "arguments": arguments}}
             else:
-                arguments = entry.get("arguments")
-                if not isinstance(arguments, str):
-                    arguments = json.dumps(_arguments_object(arguments))
-                function = {"name": entry["name"], "arguments": arguments}
+                raw = entry.get("arguments")
+                wire = raw if isinstance(raw, str) else json.dumps(_arguments_object(raw))
+                function = {"name": entry["name"], "arguments": wire}
                 call = {"id": entry["id"], "type": "function", "function": function}
             # A call of the reply before it joins that message: one response, one message.
             if entry.get("joins") and messages and messages[-1]["role"] == "assistant":
@@ -717,6 +717,7 @@ def _ollama_reply(reply: dict[str, Any]) -> tuple[str, list[ToolCall], Cut]:
         for call in message.get("tool_calls") or []
     ]
     # A non-streamed reply always says done; anything else is a part of a reply.
+    cut: Cut
     if reply.get("done") is not True:
         cut = "unfinished"
     else:
