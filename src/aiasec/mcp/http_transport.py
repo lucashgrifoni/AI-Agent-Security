@@ -1,10 +1,11 @@
 """JSON-RPC over MCP Streamable HTTP, behind the same transport interface as stdio.
 
 Each message is one POST to the server's endpoint. A request's answer comes back in
-that POST's response, as a JSON body or as a `text/event-stream` whose last JSON-RPC
-response event carries it; a notification gets `202 Accepted`. The adapter that speaks
-MCP over stdio therefore speaks it over HTTP unchanged: send() posts and queues every
-message the response carried, receive() hands them out in order.
+that POST's response, as a JSON body or as a `text/event-stream` event; the event that
+answers ends the read, even if the server keeps the stream open. A notification gets
+`202 Accepted`. The adapter that speaks MCP over stdio therefore speaks it over HTTP
+unchanged: send() posts and queues every message the response carried, receive() hands
+them out in order.
 
 Revision 2026-07-28 has no sessions: each POST names its method in `Mcp-Method`, the
 tool, resource or prompt in `Mcp-Name`, and the protocol version in
@@ -45,6 +46,10 @@ PROTOCOL_HEADERS = frozenset(
 # An event stream ends a line at CR LF, LF or CR only; str.splitlines would also split
 # at characters JSON may carry unescaped, such as U+2028.
 _SSE_LINE_BREAK = re.compile(r"\r\n|\r|\n")
+# An event ends at a blank line: two line breaks in a row.
+_SSE_EVENT_END = re.compile(rb"(?:\r\n|\r|\n)(?:\r\n|\r|\n)")
+# The longest event end is 4 bytes; a new search starts this far back.
+_SSE_EVENT_END_OVERLAP = 3
 
 
 class HttpJsonRpcTransport:
@@ -70,6 +75,7 @@ class HttpJsonRpcTransport:
                 message,
                 self._request_headers(message),
                 deadline,
+                complete=_AnswerWatch(message["id"]) if "id" in message else None,
             )
         except HttpTargetTimeout as exc:
             raise McpTransportTimeout(str(exc)) from exc
@@ -138,14 +144,52 @@ class HttpJsonRpcTransport:
                 self._legacy_version = result["protocolVersion"]
 
 
+class _AnswerWatch:
+    """Reads an event stream as it arrives and says when it has answered one request.
+
+    A server SHOULD close the stream after the answer, but may keep it open; reading on
+    to the end would then wait out the deadline with the answer already in hand.
+    """
+
+    def __init__(self, request_id: Any) -> None:
+        self._request_id = request_id
+        self._pending = bytearray()  # received bytes after the last whole event
+
+    def __call__(self, headers: Mapping[str, str], chunk: bytes) -> bool:
+        if not _is_event_stream(headers.get("content-type", "")):
+            return False
+        searched = len(self._pending)
+        self._pending += chunk
+        end = _events_end(self._pending, start=max(0, searched - _SSE_EVENT_END_OVERLAP))
+        if not end:
+            return False
+        events = bytes(self._pending[:end])
+        del self._pending[:end]
+        try:
+            messages = _messages(events, "text/event-stream")
+        except McpTransportError:
+            return True  # reading on cannot repair it; the full parse reports it
+        return any(_answers(item, self._request_id) for item in messages)
+
+
+def _answers(message: JsonObject, request_id: Any) -> bool:
+    """Whether a message is the response to a request (a server request is not)."""
+
+    return message.get("id") == request_id and "method" not in message
+
+
+def _is_event_stream(content_type: str) -> bool:
+    return content_type.split(";")[0].strip().lower() == "text/event-stream"
+
+
 def _messages(body: bytes, content_type: str) -> list[JsonObject]:
     """The JSON-RPC messages in a response body: JSON, or the data of each SSE event."""
 
     if not body.strip():
         return []
     try:
-        if content_type.split(";")[0].strip().lower() == "text/event-stream":
-            parsed: list[Any] = [json.loads(data) for data in _event_data(body.decode("utf-8"))]
+        if _is_event_stream(content_type):
+            parsed: list[Any] = [json.loads(data) for data in _event_data(body)]
         else:
             parsed = [json.loads(body)]
     except (UnicodeDecodeError, ValueError, RecursionError) as exc:
@@ -176,21 +220,34 @@ def _lenient_messages(body: bytes, content_type: str) -> list[JsonObject]:
 
 
 def _answers_with_error(message: JsonObject, request_id: Any) -> bool:
-    return message.get("id") == request_id and "error" in message
+    return _answers(message, request_id) and "error" in message
 
 
-def _event_data(stream: str) -> list[str]:
-    """The data of each server-sent event, its `data:` lines joined by newlines."""
+def _events_end(stream: bytes | bytearray, start: int = 0) -> int:
+    """Where the last whole event in the stream ends (searching from `start`), or 0."""
+
+    end = 0
+    for match in _SSE_EVENT_END.finditer(stream, start):
+        end = match.end()
+    return end
+
+
+def _event_data(stream: bytes) -> list[str]:
+    """The data of each whole server-sent event, its `data:` lines joined by newlines.
+
+    An event ends at a blank line, so one still open when the stream ends is dropped,
+    as the SSE standard does. An event without data carries no message and is skipped,
+    such as the event with only an id that a 2025-11-25 server may send first.
+    """
 
     events: list[str] = []
     data: list[str] = []
-    for line in _SSE_LINE_BREAK.split(stream):
+    for line in _SSE_LINE_BREAK.split(stream[: _events_end(stream)].decode("utf-8")):
         if not line:
-            if data:
-                events.append("\n".join(data))
-                data = []
+            joined = "\n".join(data)
+            if joined.strip():
+                events.append(joined)
+            data = []
         elif line.startswith("data:"):
             data.append(line[5:].removeprefix(" "))
-    if data:
-        events.append("\n".join(data))
     return events

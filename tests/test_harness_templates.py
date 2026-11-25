@@ -18,6 +18,7 @@ import sys
 import threading
 import time
 from collections.abc import Iterator
+from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -168,3 +169,60 @@ def test_the_readme_example_keeps_system_inputs_in_order() -> None:
     namespace["run_agent"](inputs)  # type: ignore[operator]
 
     assert received == ["first", "second", "hello"]
+
+
+@pytest.fixture(params=["http_harness", "mcp_http_harness"])
+def template_server(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.syspath_prepend(str(HARNESS.resolve()))
+    module = importlib.import_module(request.param)
+    if request.param == "http_harness":
+        server = ThreadingHTTPServer(("127.0.0.1", 0), module.make_handler(module.run_agent))
+        path = "/chat"
+    else:
+        server = module.make_server(port=0)
+        path = "/mcp"
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        yield server.server_address[1], path
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def _status_of_raw_post(port: int, path: str, length_header: str) -> int | None:
+    """Send a POST's headers only, then wait; the status, or None when none comes.
+
+    No body follows, as from a client that holds the connection open: a harness that
+    trusted the length would wait for bytes that never arrive.
+    """
+
+    request = f"POST {path} HTTP/1.1\r\nHost: 127.0.0.1\r\n{length_header}\r\n\r\n".encode()
+    with socket.create_connection(("127.0.0.1", port), timeout=3) as client:
+        client.sendall(request)
+        try:
+            status_line = client.recv(64)
+        except (TimeoutError, ConnectionError):
+            return None
+    parts = status_line.split()
+    return int(parts[1]) if len(parts) > 1 else None
+
+
+@pytest.mark.parametrize(
+    ("length_header", "expected"),
+    [
+        ("Content-Length: -1", 400),
+        ("Content-Length: abc", 400),
+        ("Content-Length: +5", 400),
+        ("Content-Length: 2097152", 413),
+        ("X-No-Length: 1", 411),
+    ],
+    ids=["negative", "not-a-number", "signed", "too-large", "missing"],
+)
+def test_a_template_refuses_a_bad_content_length_before_reading(
+    template_server: tuple[int, str], length_header: str, expected: int
+) -> None:
+    port, path = template_server
+
+    status = _status_of_raw_post(port, path, length_header)
+
+    assert status == expected

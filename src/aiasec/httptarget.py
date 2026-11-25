@@ -19,7 +19,7 @@ import re
 import socket
 import ssl
 import threading
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextlib import suppress
 from types import TracebackType
 from typing import Any, Literal, NamedTuple
@@ -43,6 +43,10 @@ class HttpReply(NamedTuple):
     status: int
     body: bytes
     headers: Mapping[str, str]
+
+
+# (reply headers, newest body chunk) -> whether the body read so far is enough.
+ReplyComplete = Callable[[Mapping[str, str], bytes], bool]
 _ENV_REFERENCE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
 
@@ -214,11 +218,15 @@ def post_json(
     document: dict[str, Any],
     extra_headers: dict[str, str],
     timeout: float,
+    *,
+    complete: ReplyComplete | None = None,
 ) -> HttpReply:
     """POST a JSON document and return the status, body and headers, within one deadline.
 
     Redirects are never followed, so a credential header cannot reach another host.
-    A reply larger than MAX_RESPONSE_BYTES raises.
+    A reply larger than MAX_RESPONSE_BYTES raises. The body is read until the server
+    closes it, or until `complete`, given the headers and each chunk as it arrives,
+    says the reply holds what the caller needs.
     """
 
     body = json.dumps(document).encode("utf-8")
@@ -245,7 +253,7 @@ def post_json(
             reply_headers = {name.lower(): value for name, value in response.getheaders()}
             outcome["reply"] = (
                 response.status,
-                response.read(MAX_RESPONSE_BYTES + 1),
+                _read_body(response, reply_headers, complete),
                 reply_headers,
             )
         except Exception as exc:  # noqa: BLE001 - handed to the calling thread below
@@ -283,6 +291,24 @@ def post_json(
     if len(payload) > MAX_RESPONSE_BYTES:
         raise HttpTargetError(f"Target reply is larger than {MAX_RESPONSE_BYTES} bytes")
     return HttpReply(status, payload, reply_headers)
+
+
+def _read_body(
+    response: http.client.HTTPResponse,
+    headers: Mapping[str, str],
+    complete: ReplyComplete | None,
+) -> bytes:
+    """The body as it arrives, up to MAX_RESPONSE_BYTES + 1 bytes or until `complete`."""
+
+    body = bytearray()
+    while len(body) <= MAX_RESPONSE_BYTES:
+        chunk = response.read1(MAX_RESPONSE_BYTES + 1 - len(body))
+        if not chunk:
+            break
+        body += chunk
+        if complete is not None and complete(headers, chunk):
+            break
+    return bytes(body)
 
 
 def _expand(value: str) -> str:

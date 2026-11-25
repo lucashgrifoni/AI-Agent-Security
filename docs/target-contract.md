@@ -177,8 +177,12 @@ How aiasec reads the response to each POST:
 
 - `200` with `application/json`: one JSON-RPC message, the answer.
 - `200` with `text/event-stream`: the `data` of each event is a JSON-RPC message.
-  Notifications sent before the answer, such as progress, are skipped; the answer
-  ends the request. Lines end only at CR, LF or CR LF.
+  Notifications sent before the answer, such as progress, are skipped, and so is an
+  event without data, such as the priming event (an id and an empty `data` field) a
+  2025-11-25 server sends first. The event that answers the request ends it: aiasec
+  stops reading there, even if the server keeps the stream open. An event is complete
+  only at its blank line; one cut off by the end of the stream is dropped. Lines end
+  only at CR, LF or CR LF.
 - `202 Accepted` to a notification: accepted, no answer.
 - Any other status, `202` to a request, or a redirect (never followed): the server
   refused the message. When the body holds a JSON-RPC error answering the request,
@@ -376,6 +380,12 @@ With `protocol: auto` (the default), aiasec first sends `server/discover` with
 | `UnsupportedProtocolVersionError` (`-32022`) or a `DiscoverResult` without `2026-07-28` | modern server | uses a handshake-based version from the advertised list if there is one, otherwise fails with the server's list |
 | `-32020` (header mismatch) or `-32021` (missing required client capability), the other errors 2026-07-28 defines | modern server that refused the probe | fails the run |
 | any other error, including other codes in the reserved `-32020` to `-32099` range (earlier revisions used it too, for example `-32042` in 2025-11-25), or no reply within `min(5, timeoutSeconds)` seconds, however many notifications arrive; over HTTP also a refusal without a JSON-RPC answer to the probe (for example `400` without a session, `404` or `405`) | legacy server | `initialize` with `2025-11-25`, then `notifications/initialized`; a late reply to the probe is discarded |
+
+A legacy server must answer `initialize` with one of the versions aiasec speaks,
+`2025-11-25`, `2025-06-18`, `2025-03-26` or `2024-11-05` (an answer without
+`protocolVersion` keeps the one aiasec offered). Any other answer fails the run before
+`notifications/initialized` is sent, so text a server chose never becomes the
+session's version, its `MCP-Protocol-Version` header or run output.
 
 A modern harness must also return `"resultType": "complete"`. A result without
 `resultType` counts as complete, as the spec requires for earlier revisions. An

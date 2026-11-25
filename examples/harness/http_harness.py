@@ -27,6 +27,11 @@ from typing import Any
 Agent = Callable[[list[dict[str, Any]]], tuple[str, list[Any]]]
 
 MAX_REQUEST_BYTES = 1_048_576
+LENGTH_REFUSALS = {
+    400: "Content-Length must be a whole number",
+    411: "Content-Length is required",
+    413: "request too large",
+}
 
 
 def run_agent(inputs: list[dict[str, Any]]) -> tuple[str, list[Any]]:
@@ -68,9 +73,9 @@ def make_handler(agent: Agent) -> type[BaseHTTPRequestHandler]:
             if self.path != "/chat":
                 self._send(404, {"error": "not found"})
                 return
-            length = int(self.headers.get("Content-Length") or 0)
-            if length > MAX_REQUEST_BYTES:
-                self._send(413, {"error": "request too large"})
+            refusal, length = _content_length(self.headers.get("Content-Length"))
+            if refusal is not None:
+                self._send(refusal, {"error": LENGTH_REFUSALS[refusal]})
                 return
             try:
                 body = json.loads(self.rfile.read(length))
@@ -95,6 +100,18 @@ def make_handler(agent: Agent) -> type[BaseHTTPRequestHandler]:
             self.wfile.write(data)
 
     return ChatHandler
+
+
+def _content_length(header: str | None) -> tuple[int | None, int]:
+    """(status that refuses the request, or None; body length) from its Content-Length."""
+
+    if header is None:
+        return 411, 0
+    # int() takes "-1" and "+5", and reading a negative length waits for the client to close.
+    if not (header.isascii() and header.isdigit()):
+        return 400, 0
+    length = int(header)
+    return (413, 0) if length > MAX_REQUEST_BYTES else (None, length)
 
 
 def serve(agent: Agent = run_agent, *, port: int = 8765) -> None:

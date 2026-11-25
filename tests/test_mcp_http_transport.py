@@ -17,7 +17,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
 import pytest
+from typer.testing import CliRunner
 
+from aiasec.cli.app import app
 from aiasec.mcp.http_transport import HttpJsonRpcTransport
 from aiasec.mcp.stdio import (
     LEGACY_PROTOCOL_VERSION,
@@ -26,6 +28,7 @@ from aiasec.mcp.stdio import (
     McpRemoteError,
     McpStdioAdapter,
 )
+from aiasec.mcp.target import McpAgentTarget
 from aiasec.mcp.transport import McpTransportError, McpTransportRejected, McpTransportTimeout
 
 META_VERSION = "io.modelcontextprotocol/protocolVersion"
@@ -37,6 +40,9 @@ class Reply:
     body: bytes | str | dict[str, Any] | None = None
     headers: dict[str, str] = field(default_factory=dict)
     delay: float = 0.0
+    # Seconds the server keeps the connection open after the body, which then has no
+    # Content-Length, so only the close would end it.
+    hold: float = 0.0
 
 
 @dataclass
@@ -77,9 +83,12 @@ def _handler(script: Script) -> type[BaseHTTPRequestHandler]:
             self.send_response(reply.status)
             for name, value in headers.items():
                 self.send_header(name, value)
-            self.send_header("Content-Length", str(len(data)))
+            if not reply.hold:
+                self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
+            self.wfile.flush()
+            time.sleep(reply.hold)
 
     return Handler
 
@@ -105,9 +114,9 @@ def _result(request_id: int, result: dict[str, Any]) -> dict[str, Any]:
     return {"jsonrpc": "2.0", "id": request_id, "result": result}
 
 
-def _sse(*messages: dict[str, Any]) -> Reply:
+def _sse(*messages: dict[str, Any], prefix: str = "", hold: float = 0.0) -> Reply:
     stream = "".join(f"event: message\ndata: {json.dumps(m)}\n\n" for m in messages)
-    return Reply(body=stream, headers={"Content-Type": "text/event-stream"})
+    return Reply(body=prefix + stream, headers={"Content-Type": "text/event-stream"}, hold=hold)
 
 
 DISCOVER = _result(1, {"resultType": "complete", "supportedVersions": [MODERN_PROTOCOL_VERSION]})
@@ -309,3 +318,118 @@ def test_a_server_request_inside_the_stream_is_not_answered_and_fails(serve: Any
 
     with pytest.raises(McpProtocolError):
         adapter.call_tool("aiasec_agent", {})
+
+
+# MCP 2025-11-25 (Streamable HTTP, sending messages, item 6): the server SHOULD first send
+# an event with an id and an empty data field, to prime the client to reconnect.
+PRIMING_EVENTS = ["id: 0\ndata: \n\n", "id: 0\ndata:\n\n"]
+
+
+@pytest.mark.parametrize("priming", PRIMING_EVENTS, ids=["data-space", "bare-data"])
+def test_an_event_with_empty_data_is_skipped_before_a_tool_result(
+    serve: Any, priming: str
+) -> None:
+    url, _ = serve([Reply(body=DISCOVER), _sse(_result(2, TOOL_RESULT), prefix=priming)])
+    adapter = McpStdioAdapter(_transport(url))
+    adapter.connect()
+
+    assert adapter.call_tool("aiasec_agent", {}) == TOOL_RESULT
+
+
+@pytest.mark.parametrize("priming", PRIMING_EVENTS, ids=["data-space", "bare-data"])
+def test_an_event_with_empty_data_is_skipped_before_a_legacy_initialize_result(
+    serve: Any, priming: str
+) -> None:
+    initialize = _result(
+        1, {"protocolVersion": LEGACY_PROTOCOL_VERSION, "capabilities": {}, "serverInfo": {}}
+    )
+    url, _ = serve([_sse(initialize, prefix=priming), Reply(status=202)])
+
+    session = McpStdioAdapter(_transport(url)).connect(mode="legacy")
+
+    assert session.era == "legacy"
+    assert session.protocol_version == LEGACY_PROTOCOL_VERSION
+
+
+def test_an_event_stream_left_open_after_the_answer_ends_the_request(serve: Any) -> None:
+    # Closing the stream after the response is only a SHOULD (2025-11-25).
+    url, _ = serve([_sse(_result(1, {"tools": []}), hold=4)])
+    transport = HttpJsonRpcTransport(url, {}, timeout_seconds=2)
+
+    started = time.monotonic()
+    transport.send({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+
+    assert time.monotonic() - started < 1.5
+    assert transport.receive() == _result(1, {"tools": []})
+
+
+def test_an_event_stream_left_open_without_the_answer_still_times_out(serve: Any) -> None:
+    progress = {"jsonrpc": "2.0", "method": "notifications/progress", "params": {}}
+    url, _ = serve([_sse(progress, _result(7, {}), hold=3)])
+    transport = HttpJsonRpcTransport(url, {}, timeout_seconds=0.5)
+
+    with pytest.raises(McpTransportTimeout):
+        transport.send({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+
+
+HOSTILE_VERSION = "2025-11-25\x1b]0;pwned\x07\x1b[2J"
+
+
+def test_a_legacy_server_naming_a_version_aiasec_does_not_speak_is_refused(
+    serve: Any,
+) -> None:
+    initialize = _result(
+        2, {"protocolVersion": HOSTILE_VERSION, "capabilities": {}, "serverInfo": {}}
+    )
+    url, script = serve([Reply(status=400), Reply(body=initialize), Reply(status=202)])
+
+    with pytest.raises(McpProtocolError, match="protocol version"):
+        McpStdioAdapter(_transport(url)).connect()
+
+    assert [item.body["method"] for item in script.received] == ["server/discover", "initialize"]
+
+
+def test_a_hostile_legacy_version_never_reaches_the_terminal(serve: Any, tmp_path: Any) -> None:
+    initialize = _result(
+        2, {"protocolVersion": HOSTILE_VERSION, "capabilities": {}, "serverInfo": {}}
+    )
+    tools = _result(3, {"tools": [{"name": "aiasec_agent", "inputSchema": {"type": "object"}}]})
+    url, _ = serve(
+        [Reply(status=400), Reply(body=initialize), Reply(status=202), Reply(body=tools)]
+        + [Reply(body=_result(request_id, TOOL_RESULT)) for request_id in range(4, 8)]
+    )
+    target = tmp_path / "target.json"
+    target.write_text(json.dumps({"transport": "mcp-http", "url": url}), encoding="utf-8")
+
+    result = CliRunner().invoke(
+        app,
+        ["run", "--target", str(target), "--execute", "--output", str(tmp_path / "r.sarif"),
+         "--probe-id", "direct-injection-001"],
+    )  # fmt: skip
+
+    assert result.exit_code == 2, result.output
+    assert "\x1b" not in result.output and "\x07" not in result.output
+    assert "Target speaks" not in result.output
+    assert "protocol version" in result.output
+
+
+def test_the_target_announcement_writes_control_characters_as_escapes(
+    serve: Any, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(McpAgentTarget, "label", property(lambda _: "MCP \x1b[2J\u202e"))
+    tools = _result(2, {"tools": [{"name": "aiasec_agent", "inputSchema": {"type": "object"}}]})
+    url, _ = serve(
+        [Reply(body=DISCOVER), Reply(body=tools)]
+        + [Reply(body=_result(request_id, TOOL_RESULT)) for request_id in range(3, 7)]
+    )
+    target = tmp_path / "target.json"
+    target.write_text(json.dumps({"transport": "mcp-http", "url": url}), encoding="utf-8")
+
+    result = CliRunner().invoke(
+        app,
+        ["run", "--target", str(target), "--execute", "--output", str(tmp_path / "r.sarif"),
+         "--probe-id", "direct-injection-001"],
+    )  # fmt: skip
+
+    assert "Target speaks MCP \\u{001b}[2J\\u{202e} over HTTP." in result.output
+    assert "\x1b" not in result.output and "\u202e" not in result.output

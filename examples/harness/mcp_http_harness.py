@@ -48,9 +48,9 @@ def make_handler(agent: Agent, server_name: str) -> type[BaseHTTPRequestHandler]
             if origin is not None and urlsplit(origin).hostname not in LOCAL_HOSTS:
                 self._send(403)
                 return
-            length = int(self.headers.get("Content-Length") or 0)
-            if length > MAX_REQUEST_BYTES:
-                self._send(413)
+            refusal, length = _content_length(self.headers.get("Content-Length"))
+            if refusal is not None:
+                self._send(refusal)
                 return
             try:
                 message = json.loads(self.rfile.read(length))
@@ -109,6 +109,18 @@ def main(agent: Agent = run_agent, *, server_name: str = "aiasec-agent-harness")
         pass
     finally:
         server.server_close()
+
+
+def _content_length(header: str | None) -> tuple[int | None, int]:
+    """(status that refuses the request, or None; body length) from its Content-Length."""
+
+    if header is None:
+        return 411, 0
+    # int() takes "-1" and "+5", and reading a negative length waits for the client to close.
+    if not (header.isascii() and header.isdigit()):
+        return 400, 0
+    length = int(header)
+    return (413, 0) if length > MAX_REQUEST_BYTES else (None, length)
 
 
 def _parse_error(text: str) -> dict[str, Any]:

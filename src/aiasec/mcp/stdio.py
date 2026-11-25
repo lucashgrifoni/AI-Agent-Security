@@ -143,22 +143,29 @@ class McpStdioAdapter:
     ) -> JsonObject:
         """Send the legacy initialize handshake and return the server's result."""
 
-        result = _expect_object(
+        result = self._initialize_request(
+            protocol_version, {"name": client_name, "version": client_version}, capabilities
+        )
+        self.notify("notifications/initialized")
+        return result
+
+    def _initialize_request(
+        self,
+        protocol_version: str,
+        client_info: JsonObject,
+        capabilities: Mapping[str, Any] | None = None,
+    ) -> JsonObject:
+        return _expect_object(
             self.request(
                 "initialize",
                 {
                     "protocolVersion": protocol_version,
                     "capabilities": dict(capabilities or {}),
-                    "clientInfo": {
-                        "name": client_name,
-                        "version": client_version,
-                    },
+                    "clientInfo": dict(client_info),
                 },
             ),
             "initialize result",
         )
-        self.notify("notifications/initialized")
-        return result
 
     def list_tools(self) -> list[JsonObject]:
         """Return tools exposed by the MCP server."""
@@ -253,13 +260,20 @@ class McpStdioAdapter:
         return self._open_legacy(LEGACY_PROTOCOL_VERSION)
 
     def _open_legacy(self, protocol_version: str) -> McpSession:
-        result = self.initialize(protocol_version=protocol_version)
-        agreed = result.get("protocolVersion")
+        result = self._initialize_request(protocol_version, self._client_info)
+        agreed = result.get("protocolVersion", protocol_version)
+        # The answer becomes the session's version, its MCP-Protocol-Version header and
+        # run output; a version aiasec does not speak ends the handshake (as 2025-11-25
+        # basic/lifecycle advises) before any server text goes further.
+        if agreed not in LEGACY_PROTOCOL_VERSIONS:
+            raise McpProtocolError(
+                f"Server answered initialize with protocol version {agreed!r}, which aiasec "
+                f"does not speak; aiasec supports {list(LEGACY_PROTOCOL_VERSIONS)}"
+            )
+        self.notify("notifications/initialized")
         server_info = result.get("serverInfo")
         self.session = McpSession(
-            "legacy",
-            agreed if isinstance(agreed, str) else protocol_version,
-            server_info if isinstance(server_info, dict) else {},
+            "legacy", agreed, server_info if isinstance(server_info, dict) else {}
         )
         return self.session
 
