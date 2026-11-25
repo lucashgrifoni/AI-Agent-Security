@@ -27,6 +27,7 @@ import ipaddress
 import json
 import os
 import re
+import time
 from collections.abc import Container
 from types import TracebackType
 from typing import Any, Literal, NamedTuple
@@ -37,7 +38,13 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from aiasec.core.conversation import drive_conversation
 from aiasec.core.evaluator.rules import TargetObservation, ToolCall
 from aiasec.core.probe import Probe
-from aiasec.httptarget import HttpTargetError, connection_for, post_json, request_path
+from aiasec.httptarget import (
+    HttpReply,
+    HttpTargetError,
+    connection_for,
+    post_json,
+    request_path,
+)
 
 Provider = Literal["anthropic", "openai", "ollama"]
 PROVIDERS: dict[str, tuple[str, str | None]] = {
@@ -56,6 +63,13 @@ DEFAULT_TOOL = "read_document"
 NOT_RUN = "aiasec did not run this tool: it records tool calls without running them."
 # Longest provider error message an error report repeats.
 MAX_ERROR_MESSAGE = 1000
+# A rate limit (429), a server error (5xx) or Anthropic's overload (529) is retried; any
+# other status is the request's fault and would fail the same way again.
+RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504, 529})
+# The longest wait between two attempts, whatever Retry-After asks for.
+MAX_RETRY_WAIT_SECONDS = 30.0
+# Replaced in tests, so a retry costs no real time.
+_sleep = time.sleep
 
 
 class ModelTargetError(HttpTargetError):
@@ -100,6 +114,8 @@ class ModelTargetConfig(BaseModel):
     # that accepts it, to reduce variation between runs.
     temperature: float | None = Field(default=None, ge=0, le=2)
     timeout_seconds: float = Field(default=60.0, alias="timeoutSeconds", gt=0, le=600)
+    # Extra attempts after a rate limit or a server error; 0 sends each request once.
+    max_retries: int = Field(default=2, alias="maxRetries", ge=0, le=5)
 
     @field_validator("url")
     @classmethod
@@ -232,19 +248,31 @@ class ModelAgentTarget:
         )
         return self._request(transcript)[0]
 
+    def _post(self, endpoint: str, body: dict[str, Any]) -> tuple[int, bytes, int]:
+        """POST, retrying a rate limit or a server error; return status, body, attempts."""
+
+        timeout = self._config.timeout_seconds
+        attempt = 1
+        while True:
+            reply: HttpReply = post_json(
+                connection_for(endpoint, timeout),
+                request_path(endpoint),
+                body,
+                self._headers(),
+                timeout,
+            )
+            if reply.status not in RETRYABLE_STATUSES or attempt > self._config.max_retries:
+                return reply.status, reply.body, attempt
+            _sleep(_retry_wait(reply.headers.get("retry-after"), attempt))
+            attempt += 1
+
     def _request(
         self, transcript: Transcript
     ) -> tuple[str, list[ToolCall], list[dict[str, Any]] | None]:
         provider = self._config.transport
         body = RENDERERS[provider](transcript, self._config)
         endpoint = self._config.endpoint
-        status, payload = post_json(
-            connection_for(endpoint, self._config.timeout_seconds),
-            request_path(endpoint),
-            body,
-            self._headers(),
-            self._config.timeout_seconds,
-        )
+        status, payload, attempts = self._post(endpoint, body)
         if status != 200:
             reason = _reason(payload, self._api_key)
             # A turn that ends with the probe's assistant input reaches Anthropic as a
@@ -255,6 +283,8 @@ class ModelAgentTarget:
                     " (this probe turn ends with an assistant input, which Anthropic reads"
                     " as a prefill; end the turn with a user input for this model)"
                 )
+            if attempts > 1:
+                reason += f" (after {attempts} attempts)"
             raise ModelTargetError(f"The {provider} API answered HTTP {status}{reason}")
         try:
             reply = json.loads(payload)
@@ -450,6 +480,17 @@ def _unused(name: str, taken: Container[str], provider: str) -> str:
         suffix = f"_{number}"
         candidate = name[: TOOL_NAME_LIMIT[provider] - len(suffix)] + suffix
     return candidate
+
+
+def _retry_wait(retry_after: str | None, attempt: int) -> float:
+    """Seconds before the next attempt: Retry-After when it is a number, else 1, 2, 4..."""
+
+    try:
+        asked = float(retry_after) if retry_after is not None else None
+    except ValueError:  # an HTTP date, or garbage: fall back to the growing wait
+        asked = None
+    wait = asked if asked is not None and asked >= 0 else float(2 ** (attempt - 1))
+    return min(wait, MAX_RETRY_WAIT_SECONDS)
 
 
 def _is_loopback(host: str) -> bool:

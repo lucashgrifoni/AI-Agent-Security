@@ -290,6 +290,8 @@ def serve() -> Iterator[Any]:
                 status, reply = fake.answer(body)
                 data = json.dumps(reply).encode("utf-8")
                 self.send_response(status)
+                for name, value in getattr(fake, "extra_headers", {}).items():
+                    self.send_header(name, value)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(data)))
                 self.end_headers()
@@ -471,7 +473,7 @@ def test_a_key_never_travels_over_plain_http_to_another_host() -> None:
     )
 
 
-def test_an_api_error_is_reported_without_the_key(serve, monkeypatch) -> None:
+def test_an_api_error_is_reported_without_the_key(serve, monkeypatch, waits) -> None:
     fake = Fake("openai", "error")
 
     with pytest.raises(ModelTargetError, match="HTTP 429: slow down") as error:
@@ -1121,3 +1123,80 @@ def test_a_huge_api_error_is_cut_and_says_so(serve, monkeypatch) -> None:
     with pytest.raises(ModelTargetError) as error:
         _observe("anthropic", serve(fake), _probe("rag-doc-poison-001"), monkeypatch)
     assert str(error.value).endswith("[message cut]") and len(str(error.value)) < 1200
+
+
+class Flaky(Fake):
+    """Answers with a retryable error a few times, then like the vulnerable fake."""
+
+    def __init__(self, provider: str, failures: int, status: int = 429, retry_after=None):
+        super().__init__(provider)
+        self.failures = failures
+        self.status = status
+        self.extra_headers = {} if retry_after is None else {"Retry-After": str(retry_after)}
+
+    def answer(self, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        if self.failures:
+            self.failures -= 1
+            return self.status, {"error": {"message": "try again"}}
+        return super().answer(body)
+
+
+@pytest.fixture
+def waits(monkeypatch) -> list[float]:
+    recorded: list[float] = []
+    monkeypatch.setattr("aiasec.modeltarget._sleep", recorded.append)
+    return recorded
+
+
+def test_a_rate_limited_request_is_retried_after_the_wait_the_api_asks(
+    serve, monkeypatch, waits
+) -> None:
+    fake = Flaky("anthropic", failures=2, retry_after=3)
+
+    observation = _observe("anthropic", serve(fake), _probe("direct-injection-001"), monkeypatch)
+
+    assert len(fake.requests) == 3
+    assert waits == [3.0, 3.0]
+    assert observation.assistant_final_response
+
+
+@pytest.mark.parametrize("status", [500, 502, 503, 504, 529])
+def test_a_server_error_is_retried_with_a_growing_wait(serve, monkeypatch, waits, status) -> None:
+    fake = Flaky("openai", failures=5, status=status)
+
+    with pytest.raises(ModelTargetError, match=rf"HTTP {status}: try again \(after 3 attempts\)"):
+        _observe("openai", serve(fake), _probe("direct-injection-001"), monkeypatch)
+    assert len(fake.requests) == 3
+    assert waits == [1.0, 2.0]
+
+
+def test_a_client_error_is_not_retried(serve, monkeypatch, waits) -> None:
+    fake = Fake("openai", "long-error")
+
+    with pytest.raises(ModelTargetError, match="HTTP 400"):
+        _observe("openai", serve(fake), _probe("direct-injection-001"), monkeypatch)
+    assert len(fake.requests) == 1
+    assert waits == []
+
+
+def test_max_retries_zero_sends_one_request(serve, monkeypatch, waits) -> None:
+    fake = Flaky("openai", failures=1)
+
+    with pytest.raises(ModelTargetError, match="HTTP 429"):
+        _observe("openai", serve(fake), _probe("direct-injection-001"), monkeypatch, maxRetries=0)
+    assert len(fake.requests) == 1
+
+
+def test_a_long_retry_after_is_capped(serve, monkeypatch, waits) -> None:
+    fake = Flaky("openai", failures=1, retry_after=86400)
+
+    _observe("openai", serve(fake), _probe("direct-injection-001"), monkeypatch)
+
+    assert waits == [30.0]
+
+
+def test_max_retries_is_bounded() -> None:
+    with pytest.raises(ValidationError, match="maxRetries"):
+        ModelTargetConfig.model_validate(
+            {"transport": "ollama", "model": "m", "maxRetries": 6, "apiKeyEnv": None}
+        )

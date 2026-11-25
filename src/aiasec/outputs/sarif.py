@@ -8,7 +8,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from aiasec import __version__
-from aiasec.core.probe import expectation_id
+from aiasec.core.probe import Probe, expectation_id
 from aiasec.core.verdict import Finding, ProbeRunResult
 
 SARIF_VERSION = "2.1.0"
@@ -21,6 +21,10 @@ MCP_TARGET_MODE = "mcp-stdio-target"
 HTTP_TARGET_MODE = "http-target"
 # Each probe's inputs were sent to a model API; tool calls were recorded, never run.
 MODEL_API_TARGET_MODE = "model-api-target"
+# GitHub code scanning ranks a rule by this score: above 9.0 is critical, 7.0 to 8.9
+# high, 4.0 to 6.9 medium, 0.1 to 3.9 low.
+SECURITY_SEVERITY = {"critical": "9.5", "high": "8.0", "medium": "5.5", "low": "3.0"}
+OWASP_KEYS = ("owasp_llm", "owasp_mcp", "owasp_agentic")
 
 
 def render_sarif(
@@ -32,7 +36,6 @@ def render_sarif(
 ) -> dict[str, Any]:
     """Render failed findings as a SARIF 2.1.0 document."""
 
-    findings = [finding for result in results for finding in result.findings]
     run_properties: dict[str, Any] = {
         "probesExecuted": len(results),
         "probesFailed": sum(1 for result in results if not result.passed),
@@ -65,7 +68,7 @@ def render_sarif(
                         "name": "aiasec",
                         "version": __version__,
                         "informationUri": "https://github.com/lucashgrifoni/AI-Agent-Security",
-                        "rules": [_rule(finding) for finding in _deduplicate_findings(findings)],
+                        "rules": [_rule(probe) for probe in _failed_probes(results)],
                     }
                 },
                 "invocations": [{"executionSuccessful": True}],
@@ -102,15 +105,16 @@ def _check_id(result: ProbeRunResult, finding: Finding) -> str:
     return expectation_id(result.probe.id, expectation)
 
 
-def _deduplicate_findings(findings: Sequence[Finding]) -> list[Finding]:
+def _failed_probes(results: Sequence[ProbeRunResult]) -> list[Probe]:
+    """Each probe with a finding, once, in run order."""
+
     seen: set[str] = set()
-    unique: list[Finding] = []
-    for finding in findings:
-        if finding.probe_id in seen:
-            continue
-        seen.add(finding.probe_id)
-        unique.append(finding)
-    return unique
+    probes: list[Probe] = []
+    for result in results:
+        if result.findings and result.probe.id not in seen:
+            seen.add(result.probe.id)
+            probes.append(result.probe)
+    return probes
 
 
 def _owasp_tags(finding: Finding) -> dict[str, str]:
@@ -122,19 +126,52 @@ def _owasp_tags(finding: Finding) -> dict[str, str]:
     return {key: value for key, value in tags.items() if value}
 
 
-def _rule(finding: Finding) -> dict[str, Any]:
-    properties: dict[str, str] = {
-        "category": finding.category,
-        "severity": finding.severity,
-        **_owasp_tags(finding),
+def _rule(probe: Probe) -> dict[str, Any]:
+    owasp = {key: probe.metadata[key] for key in OWASP_KEYS if probe.metadata.get(key)}
+    rule: dict[str, Any] = {
+        "id": probe.id,
+        "name": probe.title,
+        "shortDescription": {"text": probe.title},
+        "fullDescription": {"text": _description(probe)},
+        "help": {"text": _help(probe, markdown=False), "markdown": _help(probe, markdown=True)},
+        "properties": {
+            "category": probe.category,
+            "severity": probe.severity,
+            **owasp,
+            "security-severity": SECURITY_SEVERITY[probe.severity],
+            "tags": ["security", "ai-agent", probe.category, *owasp.values()],
+        },
     }
+    if probe.references:
+        rule["helpUri"] = probe.references[0]
+    return rule
 
-    return {
-        "id": finding.probe_id,
-        "name": finding.title,
-        "shortDescription": {"text": finding.title},
-        "properties": properties,
-    }
+
+def _description(probe: Probe) -> str:
+    if probe.judge:
+        return f"{probe.title}. The probe fails when the agent shows this behavior: {probe.judge}"
+    return f"{probe.title}. The probe fails when the agent's reply or tool calls break its rule."
+
+
+def _help(probe: Probe, *, markdown: bool) -> str:
+    """What the rule checks, how to reproduce one failure, and where to read more."""
+
+    code = (lambda text: f"`{text}`") if markdown else (lambda text: text)
+    owasp = ", ".join(probe.metadata[key] for key in OWASP_KEYS if probe.metadata.get(key))
+    lines = [
+        _description(probe),
+        "",
+        f"Probe {code(probe.id)}, category {probe.category}, severity {probe.severity}"
+        + (f", OWASP {owasp}." if owasp else "."),
+        "",
+        "Read the probe and rerun it alone against your target:",
+        "",
+        code(f"aiasec probes show {probe.id}"),
+        code(f"aiasec run --target <target config> --execute --probe-id {probe.id}"),
+    ]
+    if probe.references:
+        lines += ["", "References:", *(f"- {reference}" for reference in probe.references)]
+    return "\n".join(lines)
 
 
 def _result(finding: Finding, check: str) -> dict[str, Any]:

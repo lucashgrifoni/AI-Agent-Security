@@ -200,6 +200,7 @@ point the target config at the model's API. aiasec supports three:
 | `maxTokens` | `16000` | output limit per request; thinking and reasoning tokens count toward it, so a model that thinks by default (Claude Sonnet 5.5) or a reasoning model needs room beyond the reply. Sent as `max_tokens`, `max_completion_tokens` or Ollama's `num_predict`; an OpenAI-compatible server must accept `max_completion_tokens` |
 | `temperature` | not sent | sampling temperature; set `0` where the model accepts it to reduce variation between runs. Current Claude models reject any value but `1.0`, and some OpenAI reasoning models accept only their default |
 | `timeoutSeconds` | `60` | deadline for each request, as for HTTP targets (1 to 600) |
+| `maxRetries` | `2` | extra attempts after HTTP 429, 500, 502, 503, 504 or 529. aiasec waits what `Retry-After` asks, at most 30 seconds, or else 1, 2 then 4 seconds. Any other status fails at once. `0` sends each request once (0 to 5) |
 
 For each probe turn aiasec sends the conversation so far as one request. The model's
 text is the reply. A reply that is malformed, blank (empty or only whitespace) without a
