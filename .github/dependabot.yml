@@ -36,6 +36,24 @@ updates:
         update-types:
           - "version-update:semver-major"
 
+  # Refreshes the digest-pinned OSS-Fuzz base image of the ClusterFuzzLite build.
+  - package-ecosystem: "docker"
+    directory: "/.clusterfuzzlite"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:10"
+      timezone: "America/Sao_Paulo"
+    open-pull-requests-limit: 2
+    labels:
+      - "dependencies"
+      - "security"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    cooldown:
+      default-days: 7
+
   # Hash-locked tool sets for CI and the composite action (`uv pip compile` output).
   - package-ecosystem: "uv"
     directory: "/.github/requirements"

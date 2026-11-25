@@ -1,0 +1,9 @@
+[
+  {
+    "name": "safe_echo",
+    "description": "Echo safe text.",
+    "inputSchema": {
+      "type": "object"
+    }
+  }
+]

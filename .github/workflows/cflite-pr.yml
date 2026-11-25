@@ -1,0 +1,64 @@
+# ClusterFuzzLite: pull-request fuzzing
+#
+# Builds the Atheris harnesses in fuzz/ with .clusterfuzzlite/ and fuzzes them for ten
+# minutes in total, under AddressSanitizer, before a change merges. A crash fails the
+# job; ClusterFuzzLite uploads the reproducer as an artifact. Without a storage repo it
+# fuzzes every harness, starting from the corpus the batch workflow
+# (cflite-batch.yml) saves as an artifact. docs/testing.md explains how to read a crash.
+#
+# Supply-chain hardening:
+#   - Actions are pinned to commit SHAs (Dependabot refreshes them). The ClusterFuzzLite
+#     actions run the gcr.io/oss-fuzz-base/clusterfuzzlite-*:v1 images their action.yml
+#     names by tag; a workflow cannot pin them further.
+#   - The build image is pinned by digest in .clusterfuzzlite/Dockerfile.
+#
+# Harden-Runner egress: audit by design, see the job.
+#
+# Secrets: none. The GITHUB_TOKEN only reads the corpus artifacts of earlier runs.
+
+name: ClusterFuzzLite PR fuzzing
+
+on:
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cflite-pr-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    name: Fuzz (address)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      # Download the corpus the batch workflow saved as an artifact.
+      actions: read
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          # audit by design: this job moves artifacts or attests a build through rotating
+          # GitHub endpoints that an exact allowlist cannot name; the global blocklist applies.
+          egress-policy: audit
+
+      - name: Build fuzzers
+        uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          language: python
+          sanitizer: address
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run fuzzers
+        uses: google/clusterfuzzlite/actions/run_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          mode: code-change
+          sanitizer: address
+          fuzz-seconds: 600

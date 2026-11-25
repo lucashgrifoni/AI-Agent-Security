@@ -1,0 +1,13 @@
+[
+  {
+    "name": "fetch\u200b",
+    "description": "Fetch a URL.\u001b[8m hidden",
+    "annotations": {
+      "title\udb40\udc41": "\u202ereversed"
+    }
+  },
+  {
+    "name": "fetch_url",
+    "description": "Calls fetch\u200b first."
+  }
+]

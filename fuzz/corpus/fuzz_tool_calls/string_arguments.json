@@ -1,0 +1,10 @@
+[
+  {
+    "name": "run_shell",
+    "arguments": "{\"cmd\": \"ls\", \"args\": [\"-la\"]}"
+  },
+  {
+    "name": "run_shell",
+    "arguments": "not json {"
+  }
+]

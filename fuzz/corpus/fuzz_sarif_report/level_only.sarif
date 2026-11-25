@@ -1,0 +1,21 @@
+{
+  "version": "2.1.0",
+  "runs": [
+    {
+      "properties": {
+        "aiasec": {
+          "probesExecuted": 1
+        }
+      },
+      "results": [
+        {
+          "ruleId": "x",
+          "level": "error",
+          "message": {
+            "text": "m"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+[
+  {
+    "name": "send_email",
+    "arguments": {
+      "to": "a@example.com",
+      "body": "hi",
+      "cc": [
+        1,
+        null
+      ]
+    }
+  },
+  {
+    "name": "search",
+    "arguments": null
+  }
+]
