@@ -10,7 +10,7 @@ import threading
 from collections.abc import Mapping, Sequence
 from contextlib import suppress
 from pathlib import Path
-from typing import Any, Protocol, TextIO, cast
+from typing import IO, Any, Protocol, cast
 
 JsonObject = dict[str, Any]
 
@@ -77,8 +77,8 @@ class LineJsonRpcTransport:
     def __init__(
         self,
         *,
-        reader: TextIO,
-        writer: TextIO,
+        reader: IO[str],
+        writer: IO[str],
         receive_timeout_seconds: float | None = None,
     ) -> None:
         self._reader = reader

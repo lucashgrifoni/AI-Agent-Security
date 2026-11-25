@@ -11,7 +11,7 @@ writes them, are read.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypeGuard
 
 from aiasec.core.gate import _iter_results, _iter_runs
 
@@ -130,7 +130,7 @@ def compare(baseline: RunSummary, current: RunSummary) -> Comparison:
     )
 
 
-def _name(value: Any) -> bool:
+def _name(value: Any) -> TypeGuard[str]:
     return isinstance(value, str) and bool(value)
 
 

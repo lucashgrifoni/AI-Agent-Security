@@ -99,7 +99,9 @@ def render_markdown(
 def _judge_section(judge: Mapping[str, object] | None) -> list[str]:
     """The judge's opinions, set apart from the results they do not change."""
 
-    opinions = judge.get("opinions") if judge else None
+    if not judge:
+        return []
+    opinions = judge.get("opinions")
     if not isinstance(opinions, list) or not opinions:
         return []
     lines = [

@@ -23,8 +23,11 @@ dev = [
   "build>=1.2.0",
   "hypothesis>=6.100.0",
   "jsonschema>=4.22.0",
+  "mypy>=1.10.0",
   "pytest>=8.2.0",
-  "ruff>=0.5.0"
+  "pytest-cov>=5.0.0",
+  "ruff>=0.5.0",
+  "types-PyYAML>=6.0.12"
 ]
 
 [project.scripts]
@@ -38,6 +41,22 @@ packages = ["src/aiasec"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src/aiasec"]
+warn_unused_ignores = true
+warn_redundant_casts = true
+
+[tool.coverage.run]
+branch = true
+source = ["aiasec"]
+
+[tool.coverage.report]
+# Line and branch coverage was 92% when this floor was set (2026-11-25).
+fail_under = 90
+skip_covered = true
+show_missing = true
 
 [tool.ruff]
 line-length = 100

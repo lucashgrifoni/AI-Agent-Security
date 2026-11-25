@@ -15,6 +15,9 @@ All notable changes to this project will be documented in this file.
   instead of saying that every refusal quoting a sentinel fails. `SECURITY.md` lists
   the HTML report, the HTTP and model API targets, the judge and the GitHub Action as
   in scope.
+- CI checks types with mypy, requires 90% line and branch coverage, and also runs the
+  test suite on Windows and macOS. Type annotations were corrected where mypy found
+  them wrong; no behavior changes.
 - Decision records in `docs/adr/` for five decisions already in force: rules decide
   results, tool calls are never executed, the gate fails closed, GitHub-only
   distribution, and quoted sentinels.

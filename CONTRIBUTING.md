@@ -6,8 +6,9 @@ Use Python 3.12 or newer.
 
 ```bash
 python -m pip install -e ".[dev]"
-python -m pytest
+python -m pytest --cov
 python -m ruff check .
+python -m mypy
 ```
 
 CI installs the same tools from hash-locked files. To reproduce its environment exactly:
