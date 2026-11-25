@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, TypeGuard
 
-from aiasec.core.gate import _iter_results, _iter_runs
+from aiasec.core.sarif_reader import iter_results, iter_runs
 
 
 @dataclass(frozen=True)
@@ -58,7 +58,7 @@ class Comparison:
 def summarize(document: Any) -> RunSummary:
     """Read what a single-run report says ran and failed, failing closed."""
 
-    runs = list(_iter_runs(document))
+    runs = list(iter_runs(document))
     if len(runs) != 1:
         raise ValueError(f"compare reads aiasec reports with one run; this one has {len(runs)}")
     properties = runs[0].get("properties")
@@ -81,7 +81,7 @@ def summarize(document: Any) -> RunSummary:
             raise ValueError("report does not record which checks ran in a form aiasec reads")
         evaluated[fields[0]] = (fields[1], fields[2])
     findings: dict[str, str] = {}
-    for result in _iter_results(document):
+    for result in iter_results(document):
         details = result.get("properties")
         details = details if isinstance(details, dict) else {}
         check = details.get("expectationId")

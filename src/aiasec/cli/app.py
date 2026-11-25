@@ -24,26 +24,21 @@ from aiasec.core.gate import (
     gate_report,
     load_sarif,
 )
+from aiasec.core.modes import SINGLE_OBSERVATION_MODE
 from aiasec.core.probe import Probe, load_probes_from_dir
 from aiasec.core.runner import run_probes, run_probes_against
 from aiasec.core.verdict import ProbeRunResult
-from aiasec.httptarget import HttpAgentTarget, HttpTargetConfig, HttpTargetError
+from aiasec.httptarget import HttpTargetError
 from aiasec.judge import JudgeConfigError, Opinion, judge_results, load_judge
 from aiasec.mcp.config import McpStdioConfig, load_stdio_config
 from aiasec.mcp.fixtures import load_jsonrpc_fixture
 from aiasec.mcp.stdio import McpProtocolError, McpRemoteError, McpStdioAdapter
-from aiasec.mcp.target import McpAgentTarget, McpTargetError
 from aiasec.mcp.transport import McpTransportError
-from aiasec.modeltarget import PROVIDERS, ModelAgentTarget, ModelTargetConfig
+from aiasec.modeltarget import ModelAgentTarget, ModelTargetConfig
 from aiasec.outputs.html import render_html
 from aiasec.outputs.markdown import render_markdown
-from aiasec.outputs.sarif import (
-    HTTP_TARGET_MODE,
-    MCP_TARGET_MODE,
-    MODEL_API_TARGET_MODE,
-    SINGLE_OBSERVATION_MODE,
-    render_sarif_json,
-)
+from aiasec.outputs.sarif import render_sarif_json
+from aiasec.targets import TARGET_ERRORS, kind_of, load_target_config
 
 DEFAULT_PROBES_DIR = Path(__file__).resolve().parents[1] / "probes"
 
@@ -270,19 +265,6 @@ def _load_config(config: Path) -> McpStdioConfig:
         raise typer.BadParameter(str(exc), param_hint="--config") from exc
 
 
-TargetConfig = McpStdioConfig | HttpTargetConfig | ModelTargetConfig
-
-
-def _load_target_config(target: Path) -> TargetConfig:
-    raw = json.loads(target.read_text(encoding="utf-8"))
-    transport = raw.get("transport") if isinstance(raw, dict) else None
-    if transport == "http":
-        return HttpTargetConfig.model_validate(raw)
-    if isinstance(transport, str) and transport in PROVIDERS:
-        return ModelTargetConfig.model_validate(raw)
-    return McpStdioConfig.model_validate(raw)
-
-
 def _recording(
     observe: Callable[[Probe], TargetObservation], kept: dict[str, TargetObservation]
 ) -> Callable[[Probe], TargetObservation]:
@@ -303,49 +285,26 @@ def _run_against_target(
     kept: dict[str, TargetObservation],
 ) -> tuple[list[ProbeRunResult], str]:
     try:
-        config = _load_target_config(target)
+        config = load_target_config(target)
     except ValidationError as exc:
         typer.echo(f"Invalid target config {target}:\n{_validation_message(exc)}", err=True)
         raise typer.Exit(code=2) from exc
     except (OSError, ValueError) as exc:
         typer.echo(f"Invalid target config {target}: {exc}", err=True)
         raise typer.Exit(code=2) from exc
+    kind = kind_of(config)
     if not execute:
-        if isinstance(config, HttpTargetConfig):
-            action = f"send probes to {config.url}"
-        elif isinstance(config, ModelTargetConfig):
-            described = f"the {config.transport} model {config.model}"
-            action = f"send probes to {described} at {config.endpoint}"
-        else:
-            action = f"start {config.command!r}"
         typer.echo(
-            f"Refusing to {action} from {target}. Review the target config, then pass "
-            "--execute to let aiasec run it.",
+            f"Refusing to {kind.action(config)} from {target}. Review the target config, "
+            "then pass --execute to let aiasec run it.",
             err=True,
         )
         raise typer.Exit(code=2)
     try:
-        if isinstance(config, HttpTargetConfig):
-            with HttpAgentTarget.start(config) as agent:
-                typer.echo(f"Target is {agent.label}.")
-                return run_probes_against(probes, _recording(agent.observe, kept)), HTTP_TARGET_MODE
-        if isinstance(config, ModelTargetConfig):
-            with ModelAgentTarget.start(config) as model:
-                typer.echo(f"Target is the {model.label}.")
-                observe = _recording(model.observe, kept)
-                return run_probes_against(probes, observe), MODEL_API_TARGET_MODE
-        with McpAgentTarget.start(config) as agent:
-            typer.echo(f"Target speaks {agent.label}.")
-            return run_probes_against(probes, _recording(agent.observe, kept)), MCP_TARGET_MODE
-    except (
-        HttpTargetError,
-        McpProtocolError,
-        McpRemoteError,
-        McpTargetError,
-        McpTransportError,
-        OSError,
-        ValueError,
-    ) as exc:
+        with kind.start(config) as agent:
+            typer.echo(kind.announcement.format(label=agent.label))
+            return run_probes_against(probes, _recording(agent.observe, kept)), kind.mode
+    except TARGET_ERRORS as exc:
         typer.echo(f"Target run failed: {exc}", err=True)
         raise typer.Exit(code=2) from exc
 

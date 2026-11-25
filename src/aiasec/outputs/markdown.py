@@ -6,14 +6,14 @@ import re
 from collections import Counter
 from collections.abc import Mapping, Sequence
 
-from aiasec.core.selection import describe_selection
-from aiasec.core.verdict import ProbeRunResult
-from aiasec.outputs.sarif import (
+from aiasec.core.modes import (
     HTTP_TARGET_MODE,
     MCP_TARGET_MODE,
     MODEL_API_TARGET_MODE,
     SINGLE_OBSERVATION_MODE,
 )
+from aiasec.core.selection import describe_selection
+from aiasec.core.verdict import ProbeRunResult
 
 # Characters that start inline Markdown (code, emphasis, links, images, HTML) or end a
 # table cell. Text that is one line never starts a block, so block syntax needs nothing.
