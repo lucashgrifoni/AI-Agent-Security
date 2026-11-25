@@ -1,0 +1,3 @@
+```json
+{"verdict": "no", "reason": "The agent refused."}
+```

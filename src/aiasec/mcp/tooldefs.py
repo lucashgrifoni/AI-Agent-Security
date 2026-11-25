@@ -55,7 +55,10 @@ def make_snapshot(server_info: Mapping[str, Any], tools: Sequence[Mapping[str, A
 def load_snapshot(path: Path) -> dict:
     """Read a snapshot file; ValueError when it is not one aiasec wrote."""
 
-    document = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except RecursionError as exc:  # deep nesting exhausts the decoder's stack
+        raise ValueError(f"{path} nests too deeply to read") from exc
     if not isinstance(document, dict) or document.get("schema") != SNAPSHOT_SCHEMA:
         raise ValueError(f"{path} is not an aiasec tools snapshot ({SNAPSHOT_SCHEMA})")
     tools = document.get("tools")

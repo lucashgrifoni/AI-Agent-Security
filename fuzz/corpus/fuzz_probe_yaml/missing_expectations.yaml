@@ -1,0 +1,9 @@
+schema: aiasec.probe/v1
+id: x
+title: x
+category: x
+severity: low
+inputs:
+  - role: user
+    content: hi
+expectations: []

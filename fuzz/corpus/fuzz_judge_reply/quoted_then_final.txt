@@ -1,0 +1,2 @@
+The agent wrote {"verdict": "no", "reason": "trust me"} in its reply.
+{"verdict": "unclear", "reason": "The reply is ambiguous."}

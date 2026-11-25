@@ -308,6 +308,9 @@ def _start_judge(judge_config: Path) -> ModelAgentTarget:
     except ValidationError as exc:
         typer.echo(f"Invalid judge config {judge_config}:\n{_validation_message(exc)}", err=True)
         raise typer.Exit(code=2) from exc
+    except RecursionError as exc:  # deep nesting exhausts the decoder's stack
+        typer.echo(f"Invalid judge config {judge_config}: it nests too deeply to read", err=True)
+        raise typer.Exit(code=2) from exc
     except (OSError, ValueError, HttpTargetError, JudgeConfigError) as exc:
         typer.echo(f"Invalid judge config {judge_config}: {exc}", err=True)
         raise typer.Exit(code=2) from exc

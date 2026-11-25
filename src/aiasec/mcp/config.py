@@ -63,4 +63,6 @@ def load_stdio_config(path: Path) -> McpStdioConfig:
         raw_config = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise ValueError(f"MCP stdio config is not valid JSON: {path}") from exc
+    except RecursionError as exc:  # deep nesting exhausts the decoder's stack
+        raise ValueError(f"MCP stdio config nests too deeply to read: {path}") from exc
     return McpStdioConfig.model_validate(raw_config)
