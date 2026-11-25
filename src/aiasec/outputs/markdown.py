@@ -39,6 +39,20 @@ MODE_EXPLANATIONS = {
 }
 
 
+def _repeat_lines(results: Sequence[ProbeRunResult]) -> list[str]:
+    """With --repeat, how often each failing probe failed: a model can vary between runs."""
+
+    repeat = max((result.runs for result in results), default=1)
+    if repeat == 1:
+        return []
+    rates = ", ".join(
+        f"{_escape(result.probe.id)} {result.failures}/{result.runs}"
+        for result in results
+        if result.failures
+    )
+    return [f"- Runs per probe: {repeat}", *([f"- Failed runs: {rates}"] if rates else [])]
+
+
 def render_markdown(
     results: Sequence[ProbeRunResult],
     *,
@@ -63,6 +77,7 @@ def render_markdown(
         f"- Findings: {finding_count}",
         f"- Observation mode: {observation_mode}",
         *([f"- Selection: {_escape(describe_selection(selection))}"] if selection else []),
+        *_repeat_lines(results),
         "",
         MODE_EXPLANATIONS[observation_mode],
         "",

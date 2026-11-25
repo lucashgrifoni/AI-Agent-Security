@@ -47,6 +47,9 @@ class TargetKind:
     announcement: str
     # What aiasec would do with this config, for the message that asks for --execute.
     action: Callable[[Any], str]
+    # Whether several probes may be in flight at once (--concurrency). An MCP stdio
+    # server is one process answering one request at a time.
+    concurrent: bool = False
 
 
 KINDS: dict[type, TargetKind] = {
@@ -55,6 +58,7 @@ KINDS: dict[type, TargetKind] = {
         mode=HTTP_TARGET_MODE,
         announcement="Target is {label}.",
         action=lambda config: f"send probes to {config.url}",
+        concurrent=True,
     ),
     ModelTargetConfig: TargetKind(
         start=ModelAgentTarget.start,
@@ -63,6 +67,7 @@ KINDS: dict[type, TargetKind] = {
         action=lambda config: (
             f"send probes to the {config.transport} model {config.model} at {config.endpoint}"
         ),
+        concurrent=True,
     ),
     McpStdioConfig: TargetKind(
         start=McpAgentTarget.start,

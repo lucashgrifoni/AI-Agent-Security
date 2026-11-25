@@ -53,6 +53,13 @@ def render_sarif(
     # Advisory opinions of an LLM judge; the gate never reads them.
     if judge:
         run_properties["judge"] = dict(judge)
+    # With --repeat, how many times each probe ran and how often each failing one failed.
+    repeat = max((result.runs for result in results), default=1)
+    if repeat > 1:
+        run_properties["repeat"] = repeat
+        run_properties["failedRuns"] = {
+            result.probe.id: result.failures for result in results if result.failures
+        }
     return {
         "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
         "version": SARIF_VERSION,

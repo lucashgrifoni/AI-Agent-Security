@@ -94,6 +94,8 @@ def _run_against_target(
     *,
     execute: bool,
     kept: dict[str, TargetObservation],
+    repeat: int = 1,
+    concurrency: int = 1,
 ) -> tuple[list[ProbeRunResult], str]:
     try:
         config = load_target_config(target)
@@ -111,10 +113,23 @@ def _run_against_target(
             err=True,
         )
         raise typer.Exit(code=2)
+    if concurrency > 1 and not kind.concurrent:
+        typer.echo(
+            "--concurrency needs an HTTP or model API target; an MCP stdio server answers "
+            "one request at a time.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
     try:
         with kind.start(config) as agent:
             typer.echo(kind.announcement.format(label=agent.label))
-            return run_probes_against(probes, _recording(agent.observe, kept)), kind.mode
+            results = run_probes_against(
+                probes,
+                _recording(agent.observe, kept),
+                repeat=repeat,
+                concurrency=concurrency,
+            )
+            return results, kind.mode
     except TARGET_ERRORS as exc:
         typer.echo(f"Target run failed: {printable(str(exc))}", err=True)
         raise typer.Exit(code=2) from exc
@@ -186,6 +201,25 @@ def run(
             "Advisory: the judge never changes results, the gate or the exit code.",
         ),
     ] = None,
+    repeat: Annotated[
+        int,
+        typer.Option(
+            "--repeat",
+            min=1,
+            max=20,
+            help="Run each probe this many times against the target; it fails if any run "
+            "failed, and the report keeps how many did.",
+        ),
+    ] = 1,
+    concurrency: Annotated[
+        int,
+        typer.Option(
+            "--concurrency",
+            min=1,
+            max=16,
+            help="Probes in flight at once, for HTTP and model API targets.",
+        ),
+    ] = 1,
 ) -> None:
     """Run probes against a live MCP target or a supplied observation."""
 
@@ -194,6 +228,13 @@ def run(
         typer.echo(
             "--target sends each probe to the target; it cannot be combined with "
             "--response, --response-file, --tools-called, or --tool-calls-file.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    if target is None and (repeat > 1 or concurrency > 1):
+        typer.echo(
+            "--repeat and --concurrency apply to --target runs; a supplied response gives "
+            "the same result every time.",
             err=True,
         )
         raise typer.Exit(code=2)
@@ -215,7 +256,9 @@ def run(
 
     kept: dict[str, TargetObservation] = {}
     if target is not None:
-        results, observation_mode = _run_against_target(probes, target, execute=execute, kept=kept)
+        results, observation_mode = _run_against_target(
+            probes, target, execute=execute, kept=kept, repeat=repeat, concurrency=concurrency
+        )
     else:
         observation = TargetObservation(
             assistant_final_response=_read_response(response, response_file),

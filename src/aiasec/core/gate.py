@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from aiasec.core.probe import Severity
 from aiasec.core.sarif_reader import iter_results, iter_runs
 from aiasec.core.selection import describe_selection
+from aiasec.core.waivers import Waiver, split_waived
 
 SEVERITY_ORDER: tuple[Severity, ...] = ("critical", "high", "medium", "low")
 
@@ -65,6 +67,9 @@ class GateDecision(BaseModel):
     probes_executed: int = 0
     # Filters each run of the report applied; empty for a run of the whole suite.
     selections: list[dict[str, Any]] = Field(default_factory=list)
+    # Waivers that removed results from the counts, and waivers that no longer apply.
+    waived: list[dict[str, Any]] = Field(default_factory=list)
+    expired_waivers: list[dict[str, Any]] = Field(default_factory=list)
 
     @property
     def total(self) -> int:
@@ -97,8 +102,12 @@ def load_sarif(path: Path) -> Any:
 def count_severities(document: Any) -> dict[str, int]:
     """Count SARIF results per probe severity."""
 
+    return _count(iter_results(document))
+
+
+def _count(results: Iterable[Mapping[str, Any]]) -> dict[str, int]:
     counts: dict[str, int] = dict.fromkeys(SEVERITY_ORDER, 0)
-    for result in iter_results(document):
+    for result in results:
         counts[_severity_of(result)] += 1
     return counts
 
@@ -178,7 +187,12 @@ def _is_selection(value: Any) -> bool:
 
 
 def gate_report(
-    path: Path, thresholds: GateThresholds, *, allow_partial: bool = False
+    path: Path,
+    thresholds: GateThresholds,
+    *,
+    allow_partial: bool = False,
+    waivers: Iterable[Waiver] = (),
+    today: date | None = None,
 ) -> GateDecision:
     """Load a SARIF report and return its release verdict.
 
@@ -195,8 +209,18 @@ def gate_report(
             f"report covers only part of the suite ({described}); gate the full suite, "
             "or pass --allow-partial to gate this subset on purpose"
         )
-    decision = evaluate_gate(count_severities(document), thresholds)
-    return decision.model_copy(update={"probes_executed": executed, "selections": selections})
+    kept, waived, expired = split_waived(
+        iter_results(document), list(waivers), today=today or date.today()
+    )
+    decision = evaluate_gate(_count(kept), thresholds)
+    return decision.model_copy(
+        update={
+            "probes_executed": executed,
+            "selections": selections,
+            "waived": waived,
+            "expired_waivers": expired,
+        }
+    )
 
 
 def _severity_of(result: Mapping[str, Any]) -> Severity:
