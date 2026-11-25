@@ -7,7 +7,8 @@
 # The build job exists because the test suite runs from the source tree and once
 # missed that the wheel could not be built at all. It builds the wheel, checks that
 # every bundled probe is inside it, installs it in a clean virtualenv, and runs the
-# README quickstart through the release gate.
+# README quickstart through the release gate. The container job builds the Docker
+# image and runs it; it never pushes.
 #
 # Supply-chain hardening:
 #   - Actions are pinned to immutable commit SHAs; the trailing comment records the
@@ -180,6 +181,48 @@ jobs:
 
       - name: Pytest
         run: python -m pytest -rs
+
+  container:
+    name: Container image
+    # Builds the image from the Dockerfile and runs it the way a user would. Nothing is
+    # pushed and no credential is used: the Publish workflow pushes on a release.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: block
+          # Docker Hub (the pinned base image) and PyPI (the hash-locked installs).
+          allowed-endpoints: >
+            api.github.com:443
+            auth.docker.io:443
+            files.pythonhosted.org:443
+            github.com:443
+            production.cloudfront.docker.com:443
+            pypi.org:443
+            registry-1.docker.io:443
+
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Build the image (not pushed)
+        run: |
+          docker build \
+            --build-arg SOURCE_DATE_EPOCH="$(git log -1 --pretty=%ct)" \
+            --build-arg REVISION="$GITHUB_SHA" \
+            --tag aiasec:ci .
+
+      - name: Smoke-run the image
+        run: |
+          docker run --rm aiasec:ci --version
+          docker run --rm aiasec:ci probes list
+          user="$(docker run --rm --entrypoint id aiasec:ci -u)"
+          test "$user" != 0 || { echo "the image must not run as root"; exit 1; }
 
   build:
     name: Build and smoke test

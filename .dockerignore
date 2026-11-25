@@ -1,0 +1,11 @@
+# The build context holds only what the Dockerfile copies. Everything else stays out,
+# including .git, local virtualenvs, .env files, reports and caches.
+*
+!pyproject.toml
+!README.md
+!LICENSE
+!src
+!.github/requirements/build.txt
+!.github/requirements/runtime.txt
+**/__pycache__
+**/*.pyc
