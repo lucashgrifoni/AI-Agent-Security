@@ -6,9 +6,10 @@ Speaks both protocol eras defined by MCP 2026-07-28 (basic/versioning):
   client capabilities in ``params._meta``;
 - legacy (2025-11-25 and earlier): an ``initialize`` handshake opens the session.
 
-``connect()`` follows the stdio backward-compatibility rules: probe with
+``connect()`` follows the backward-compatibility rules: probe with
 ``server/discover``; a DiscoverResult or a recognized modern error means a modern
-server, any other error or silence means a legacy one.
+server, any other error, silence, or (over HTTP) a refusal without a JSON-RPC answer
+means a legacy one.
 """
 
 from __future__ import annotations
@@ -19,7 +20,18 @@ from dataclasses import dataclass
 from typing import Any, Literal, cast
 
 from aiasec import __version__
-from aiasec.mcp.transport import JsonObject, JsonRpcTransport, McpTransportTimeout
+from aiasec.mcp.input_requests import (
+    INPUT_REQUIRED,
+    MAX_INPUT_ROUND_TRIPS,
+    InputRequestError,
+    answered_params,
+)
+from aiasec.mcp.transport import (
+    JsonObject,
+    JsonRpcTransport,
+    McpTransportRejected,
+    McpTransportTimeout,
+)
 
 JSONRPC_VERSION = "2.0"
 MODERN_PROTOCOL_VERSION = "2026-07-28"
@@ -112,7 +124,7 @@ class McpStdioAdapter:
             if exc.code in MODERN_ERROR_CODES:
                 raise McpProtocolError(f"Server rejected the discovery probe: {exc}") from exc
             return self._fall_back_to_legacy(mode, reason=str(exc))
-        except McpTransportTimeout as exc:
+        except (McpTransportTimeout, McpTransportRejected) as exc:
             return self._fall_back_to_legacy(mode, reason=str(exc))
 
         discovered = _expect_object(result, "server/discover result")
@@ -164,20 +176,30 @@ class McpStdioAdapter:
         name: str,
         arguments: Mapping[str, Any] | None = None,
     ) -> JsonObject:
-        """Call one MCP tool and return the raw JSON-RPC result object."""
+        """Call one MCP tool and return its final result object.
+
+        A multi round-trip ``input_required`` result is answered (see
+        aiasec.mcp.input_requests) and the call re-issued, at most
+        MAX_INPUT_ROUND_TRIPS times.
+        """
 
         if not name.strip():
             raise ValueError("tool name must not be empty")
-        return _expect_complete(
-            self.request(
-                "tools/call",
-                {
-                    "name": name,
-                    "arguments": dict(arguments or {}),
-                },
-            ),
-            "tools/call result",
-        )
+        params = {"name": name, "arguments": dict(arguments or {})}
+        result = _expect_object(self.request("tools/call", params), "tools/call result")
+        rounds = 0
+        while result.get("resultType") == INPUT_REQUIRED:
+            if rounds == MAX_INPUT_ROUND_TRIPS:
+                raise McpProtocolError(
+                    f"tools/call still asks for input after {MAX_INPUT_ROUND_TRIPS} round trips"
+                )
+            rounds += 1
+            try:
+                retry = answered_params(params, result)
+            except InputRequestError as exc:
+                raise McpProtocolError(str(exc)) from exc
+            result = _expect_object(self.request("tools/call", retry), "tools/call result")
+        return _expect_complete(result, "tools/call result")
 
     def request(self, method: str, params: Mapping[str, Any] | None = None) -> Any:
         """Send one JSON-RPC request and wait for its matching response.
@@ -274,6 +296,8 @@ class McpStdioAdapter:
         meta: JsonObject = dict(existing) if isinstance(existing, dict) else {}
         meta[META_PROTOCOL_VERSION] = version
         meta[META_CLIENT_INFO] = self._client_info
+        # No capabilities: a server must not ask a client for input it did not declare
+        # (elicitation, roots, sampling). One that asks anyway is answered safely.
         meta[META_CLIENT_CAPABILITIES] = {}
         return meta
 
@@ -377,9 +401,9 @@ def _expect_object(value: Any, label: str) -> JsonObject:
 def _expect_complete(value: Any, label: str) -> JsonObject:
     """Accept a final result only.
 
-    Results from earlier revisions carry no resultType and count as complete. A
-    multi round-trip ``input_required`` result or an unknown type is not handled by
-    aiasec, so it fails instead of being read as an empty answer.
+    Results from earlier revisions carry no resultType and count as complete. An
+    unknown type, or ``input_required`` where aiasec does not answer input, fails
+    instead of being read as an empty answer.
     """
 
     result = _expect_object(value, label)

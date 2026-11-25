@@ -16,16 +16,35 @@ so a credential header cannot reach another host (aiasec.httptarget.post_json).
 from __future__ import annotations
 
 import json
+import re
 from collections import deque
 from collections.abc import Mapping
 from typing import Any
 
-from aiasec.httptarget import HttpTargetError, connection_for, post_json, request_path
-from aiasec.mcp.transport import JsonObject, McpTransportError, McpTransportTimeout
+from aiasec.httptarget import (
+    HttpTargetError,
+    HttpTargetTimeout,
+    connection_for,
+    post_json,
+    request_path,
+)
+from aiasec.mcp.transport import (
+    JsonObject,
+    McpTransportError,
+    McpTransportRejected,
+    McpTransportTimeout,
+)
 
 META_PROTOCOL_VERSION = "io.modelcontextprotocol/protocolVersion"
 # Methods whose POST also names their target in Mcp-Name.
 NAMED_METHODS = {"tools/call": "name", "prompts/get": "name", "resources/read": "uri"}
+# Headers this transport sets on every POST; a target config may not set them too.
+PROTOCOL_HEADERS = frozenset(
+    {"accept", "content-type", "mcp-method", "mcp-name", "mcp-protocol-version", "mcp-session-id"}
+)
+# An event stream ends a line at CR LF, LF or CR only; str.splitlines would also split
+# at characters JSON may carry unescaped, such as U+2028.
+_SSE_LINE_BREAK = re.compile(r"\r\n|\r|\n")
 
 
 class HttpJsonRpcTransport:
@@ -52,17 +71,23 @@ class HttpJsonRpcTransport:
                 self._request_headers(message),
                 deadline,
             )
+        except HttpTargetTimeout as exc:
+            raise McpTransportTimeout(str(exc)) from exc
         except HttpTargetError as exc:
-            if "timed out" in str(exc):
-                raise McpTransportTimeout(str(exc)) from exc
             raise McpTransportError(str(exc)) from exc
-        if status == 202 and "id" not in message:
-            return  # an accepted notification has no answer
-        messages = _messages(body, headers.get("content-type", ""))
-        if status != 200 and not any("error" in item for item in messages):
-            raise McpTransportError(
-                f"MCP server answered HTTP {status} to {message.get('method')!r}"
-            )
+        if "id" not in message:
+            # A notification is accepted with 202 (or 200) and has no answer.
+            if status not in (200, 202):
+                raise _refusal(status, message)
+            return
+        if status == 200:
+            messages = _messages(body, headers.get("content-type", ""))
+        else:
+            # An error status counts only with a JSON-RPC error answering this request,
+            # which the adapter then raises as the server's error.
+            messages = _lenient_messages(body, headers.get("content-type", ""))
+            if not any(_answers_with_error(item, message["id"]) for item in messages):
+                raise _refusal(status, message)
         self._remember_legacy_session(message, messages, headers)
         self._received.extend(messages)
 
@@ -134,12 +159,32 @@ def _messages(body: bytes, content_type: str) -> list[JsonObject]:
     return messages
 
 
+def _refusal(status: int, sent: JsonObject) -> McpTransportRejected:
+    redirect = "; aiasec does not follow redirects" if 300 <= status < 400 else ""
+    return McpTransportRejected(
+        f"MCP server answered HTTP {status} to {sent.get('method')!r}{redirect}"
+    )
+
+
+def _lenient_messages(body: bytes, content_type: str) -> list[JsonObject]:
+    """The messages of an error response, or none when its body is not JSON-RPC."""
+
+    try:
+        return _messages(body, content_type)
+    except McpTransportError:
+        return []
+
+
+def _answers_with_error(message: JsonObject, request_id: Any) -> bool:
+    return message.get("id") == request_id and "error" in message
+
+
 def _event_data(stream: str) -> list[str]:
     """The data of each server-sent event, its `data:` lines joined by newlines."""
 
     events: list[str] = []
     data: list[str] = []
-    for line in stream.splitlines():
+    for line in _SSE_LINE_BREAK.split(stream):
         if not line:
             if data:
                 events.append("\n".join(data))

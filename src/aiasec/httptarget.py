@@ -47,6 +47,10 @@ class HttpTargetError(RuntimeError):
     """Raised when an HTTP target does not honor the aiasec target contract."""
 
 
+class HttpTargetTimeout(HttpTargetError):
+    """Raised when a request does not complete within its deadline."""
+
+
 class HttpTargetConfig(BaseModel):
     """Validated HTTP target configuration."""
 
@@ -218,10 +222,10 @@ def post_json(
         if sock is not None:
             with suppress(OSError):
                 sock.shutdown(socket.SHUT_RDWR)
-        raise HttpTargetError(f"Target timed out after {timeout} s")
+        raise HttpTargetTimeout(f"Target timed out after {timeout} s")
     error = outcome.get("error")
     if isinstance(error, TimeoutError):
-        raise HttpTargetError(f"Target timed out after {timeout} s") from error
+        raise HttpTargetTimeout(f"Target timed out after {timeout} s") from error
     if isinstance(error, (OSError, http.client.HTTPException)):
         raise HttpTargetError(f"HTTP request to the target failed: {error}") from error
     if isinstance(error, ValueError):
