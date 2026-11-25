@@ -10,6 +10,14 @@ All notable changes to this project will be documented in this file.
   installs a release tag and shows how to verify the attested wheel before installing.
 - The README describes the model API targets added in 0.3.0 among the target modes,
   instead of listing them as left for later.
+- `anyio` is no longer a runtime dependency; no aiasec module imported it.
+- The README's note on sentinel detection describes `ignore_quoted`, added in 0.3.1,
+  instead of saying that every refusal quoting a sentinel fails. `SECURITY.md` lists
+  the HTML report, the HTTP and model API targets, the judge and the GitHub Action as
+  in scope.
+- Decision records in `docs/adr/` for five decisions already in force: rules decide
+  results, tool calls are never executed, the gate fails closed, GitHub-only
+  distribution, and quoted sentinels.
 
 ## 0.3.1 - 2026-10-08
 
