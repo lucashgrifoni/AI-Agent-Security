@@ -14,6 +14,8 @@ from aiasec.cli.common import (
     _load_probes,
     _select_probes,
 )
+from aiasec.core.probe_check import check_probe_dir
+from aiasec.core.text import printable
 
 
 def list_probes(
@@ -47,3 +49,20 @@ def show_probe(
             return
     typer.echo(f"Probe not found: {probe_id}", err=True)
     raise typer.Exit(code=2)
+
+
+def validate_probes(
+    probes_dir: Annotated[Path, typer.Argument(help="Directory with probe YAML files to check.")],
+) -> None:
+    """Check a probe pack against the quality bar, without running it."""
+
+    if not probes_dir.is_dir():
+        typer.echo(f"Not a directory: {probes_dir}", err=True)
+        raise typer.Exit(code=2)
+    probes, problems = check_probe_dir(probes_dir)
+    for problem in problems:
+        where = problem.file + (f" ({problem.probe_id})" if problem.probe_id else "")
+        typer.echo(printable(f"{where}: {problem.problem}", keep_newlines=False))
+    typer.echo(f"Checked {len(probes)} probe(s): {len(problems)} problem(s).")
+    if problems:
+        raise typer.Exit(code=1)

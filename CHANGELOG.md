@@ -54,6 +54,11 @@ All notable changes to this project will be documented in this file.
 - The MCP stdio harness template, and the reference MCP targets built on it, read and
   write their pipes as UTF-8. On Windows they used the locale encoding, which garbled
   every character outside ASCII that aiasec sent; the new Unicode tag probe found it.
+- `aiasec run` writes JUnit XML for `.xml` outputs or `--format junit`: one test case
+  per probe, grouped by category, with a failure per failed expectation.
+- `aiasec probes validate <directory>` checks a probe pack against the quality bar
+  without running it: loading, pattern compilation and nested quantifiers, unique ids
+  and patterns, OWASP id shape, references, and no false positive on a plain refusal.
 - Decision records in `docs/adr/` for five decisions already in force: rules decide
   results, tool calls are never executed, the gate fails closed, GitHub-only
   distribution, and quoted sentinels.

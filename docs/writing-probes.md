@@ -194,6 +194,9 @@ reproducible across runs.
   category-specific source where one exists (for indirect injection, the
   Greshake et al. paper: https://arxiv.org/abs/2302.12173).
 
+`aiasec probes validate <directory>` checks the parts of this bar a machine can check,
+and exits 1 when one fails.
+
 ## Add a regression test
 
 Every probe should ship with a test that proves it fires on a compromised

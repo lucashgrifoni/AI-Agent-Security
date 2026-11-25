@@ -177,6 +177,15 @@ aiasec probes list
 aiasec probes show direct-injection-001
 ```
 
+Check a probe pack before you run it: every file loads, each pattern compiles and has
+no nested quantifier, ids and patterns are unique, OWASP ids have the right shape, a
+reference is cited, and a plain refusal does not fail the probe. It exits 1 when it
+finds a problem:
+
+```bash
+aiasec probes validate path/to/probes
+```
+
 ### Select probes
 
 `run` and `probes list` take the same filters, combined with AND:
@@ -221,8 +230,9 @@ aiasec run --response "COMPROMISED" --output report.html
 ```
 
 `--format auto` (the default) picks SARIF for `.sarif` and `.json`, HTML for `.html` and
-`.htm`, and Markdown otherwise; `--format markdown|sarif|html` forces one. The gate
-reads SARIF only.
+`.htm`, JUnit XML for `.xml`, and Markdown otherwise; `--format markdown|sarif|html|junit`
+forces one. JUnit XML has one test case per probe, grouped by category, for CI systems
+that show JUnit results (Azure DevOps, GitLab, Jenkins). The gate reads SARIF only.
 
 Evaluate observed tool calls:
 
