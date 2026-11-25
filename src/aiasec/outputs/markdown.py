@@ -8,6 +8,7 @@ from collections.abc import Mapping, Sequence
 
 from aiasec.core.modes import (
     HTTP_TARGET_MODE,
+    MCP_HTTP_TARGET_MODE,
     MCP_TARGET_MODE,
     MODEL_API_TARGET_MODE,
     SINGLE_OBSERVATION_MODE,
@@ -26,6 +27,10 @@ MODE_EXPLANATIONS = {
     MCP_TARGET_MODE: (
         "Each probe's inputs were sent to the target over MCP stdio, one call per turn, and each\n"
         "probe was scored against the final reply and the tool calls the target reported."
+    ),
+    MCP_HTTP_TARGET_MODE: (
+        "Each probe's inputs were sent to the target over MCP Streamable HTTP, one call per turn,\n"
+        "and each probe was scored against the final reply and the tool calls the target reported."
     ),
     HTTP_TARGET_MODE: (
         "Each probe's inputs were POSTed to the target over HTTP, one request per turn, and each\n"

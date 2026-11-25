@@ -2,17 +2,20 @@
 
 A template that has not been connected to an agent must fail the aiasec run: a stub
 that answered something would pass every probe without testing anything. The
-templates also stay standard-library only, so they can be copied into any project.
+templates also stay standard-library only (one may reuse another), so they can be
+copied into any project.
 """
 
 from __future__ import annotations
 
 import ast
+import importlib
 import json
 import re
 import socket
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -49,7 +52,8 @@ def test_templates_import_only_the_standard_library(template: Path) -> None:
         for alias in node.names
     }
 
-    assert modules <= set(sys.stdlib_module_names) | {"__future__"}, modules
+    siblings = {path.stem for path in TEMPLATES}
+    assert modules <= set(sys.stdlib_module_names) | {"__future__"} | siblings, modules
 
 
 def test_an_unconnected_mcp_template_fails_the_run(tmp_path: Path) -> None:
@@ -59,6 +63,25 @@ def test_an_unconnected_mcp_template_fails_the_run(tmp_path: Path) -> None:
     }
 
     result, output = _run_target(tmp_path, config)
+
+    assert result.exit_code == 2, result.output
+    assert "tool error" in result.output
+    assert not output.exists()
+
+
+def test_an_unconnected_mcp_http_template_fails_the_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # In process: a subprocess listener was unreachable on the macOS CI runner.
+    monkeypatch.syspath_prepend(str(HARNESS.resolve()))
+    server = importlib.import_module("mcp_http_harness").make_server(port=0)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        url = f"http://127.0.0.1:{server.server_address[1]}/mcp"
+        result, output = _run_target(tmp_path, {"transport": "mcp-http", "url": url})
+    finally:
+        server.shutdown()
+        server.server_close()
 
     assert result.exit_code == 2, result.output
     assert "tool error" in result.output

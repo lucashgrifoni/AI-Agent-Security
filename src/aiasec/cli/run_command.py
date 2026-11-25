@@ -115,7 +115,7 @@ def _run_against_target(
         raise typer.Exit(code=2)
     if concurrency > 1 and not kind.concurrent:
         typer.echo(
-            "--concurrency needs an HTTP or model API target; an MCP stdio server answers "
+            "--concurrency needs an HTTP or model API target; aiasec sends an MCP target "
             "one request at a time.",
             err=True,
         )

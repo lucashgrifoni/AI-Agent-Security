@@ -6,6 +6,8 @@ from __future__ import annotations
 SINGLE_OBSERVATION_MODE = "single-observation"
 # Each probe's inputs were sent to a live target over MCP stdio.
 MCP_TARGET_MODE = "mcp-stdio-target"
+# Each probe's inputs were sent to a live target over MCP Streamable HTTP.
+MCP_HTTP_TARGET_MODE = "mcp-http-target"
 # Each probe's inputs were POSTed to a live target over HTTP.
 HTTP_TARGET_MODE = "http-target"
 # Each probe's inputs were sent to a model API; tool calls were recorded, never run.

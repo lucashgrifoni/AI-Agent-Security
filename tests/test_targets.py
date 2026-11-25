@@ -8,10 +8,15 @@ from typing import Any
 
 import pytest
 
-from aiasec.core.modes import HTTP_TARGET_MODE, MCP_TARGET_MODE, MODEL_API_TARGET_MODE
+from aiasec.core.modes import (
+    HTTP_TARGET_MODE,
+    MCP_HTTP_TARGET_MODE,
+    MCP_TARGET_MODE,
+    MODEL_API_TARGET_MODE,
+)
 from aiasec.core.target import AgentTarget
 from aiasec.httptarget import HttpAgentTarget, HttpTargetConfig
-from aiasec.mcp.config import McpStdioConfig
+from aiasec.mcp.config import McpHttpConfig, McpStdioConfig
 from aiasec.mcp.target import McpAgentTarget
 from aiasec.modeltarget import ModelAgentTarget, ModelTargetConfig
 from aiasec.targets import KINDS, kind_of, load_target_config
@@ -48,6 +53,12 @@ def test_the_interface_rejects_an_object_that_cannot_observe() -> None:
             MCP_TARGET_MODE,
             "start ['python', 'server.py']",
         ),
+        (
+            {"transport": "mcp-http", "url": "http://127.0.0.1:8766/mcp"},
+            McpHttpConfig,
+            MCP_HTTP_TARGET_MODE,
+            "send probes to the MCP server at http://127.0.0.1:8766/mcp",
+        ),
     ],
 )
 def test_each_config_selects_its_kind(
@@ -65,4 +76,9 @@ def test_each_config_selects_its_kind(
 
 
 def test_every_config_type_has_exactly_one_kind() -> None:
-    assert set(KINDS) == {HttpTargetConfig, ModelTargetConfig, McpStdioConfig}
+    assert set(KINDS) == {HttpTargetConfig, ModelTargetConfig, McpStdioConfig, McpHttpConfig}
+
+
+def test_mcp_targets_take_one_probe_at_a_time() -> None:
+    assert not KINDS[McpStdioConfig].concurrent
+    assert not KINDS[McpHttpConfig].concurrent

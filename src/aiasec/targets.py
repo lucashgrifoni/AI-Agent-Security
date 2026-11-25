@@ -14,16 +14,21 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from aiasec.core.modes import HTTP_TARGET_MODE, MCP_TARGET_MODE, MODEL_API_TARGET_MODE
+from aiasec.core.modes import (
+    HTTP_TARGET_MODE,
+    MCP_HTTP_TARGET_MODE,
+    MCP_TARGET_MODE,
+    MODEL_API_TARGET_MODE,
+)
 from aiasec.core.target import AgentTarget
 from aiasec.httptarget import HttpAgentTarget, HttpTargetConfig, HttpTargetError
-from aiasec.mcp.config import McpStdioConfig
+from aiasec.mcp.config import McpHttpConfig, McpStdioConfig
 from aiasec.mcp.stdio import McpProtocolError, McpRemoteError
 from aiasec.mcp.target import McpAgentTarget, McpTargetError
 from aiasec.mcp.transport import McpTransportError
 from aiasec.modeltarget import PROVIDERS, ModelAgentTarget, ModelTargetConfig
 
-TargetConfig = McpStdioConfig | HttpTargetConfig | ModelTargetConfig
+TargetConfig = McpStdioConfig | McpHttpConfig | HttpTargetConfig | ModelTargetConfig
 
 # What a started target may raise: the run stops with exit code 2.
 TARGET_ERRORS: tuple[type[Exception], ...] = (
@@ -47,8 +52,9 @@ class TargetKind:
     announcement: str
     # What aiasec would do with this config, for the message that asks for --execute.
     action: Callable[[Any], str]
-    # Whether several probes may be in flight at once (--concurrency). An MCP stdio
-    # server is one process answering one request at a time.
+    # Whether several probes may be in flight at once (--concurrency). An MCP target
+    # gets one request at a time: a stdio server is one process reading one pipe, and
+    # aiasec keeps the same order over HTTP.
     concurrent: bool = False
 
 
@@ -75,11 +81,17 @@ KINDS: dict[type, TargetKind] = {
         announcement="Target speaks {label}.",
         action=lambda config: f"start {config.command!r}",
     ),
+    McpHttpConfig: TargetKind(
+        start=McpAgentTarget.start_http,
+        mode=MCP_HTTP_TARGET_MODE,
+        announcement="Target speaks {label} over HTTP.",
+        action=lambda config: f"send probes to the MCP server at {config.url}",
+    ),
 }
 
 
 def load_target_config(path: Path) -> TargetConfig:
-    """Read a target config; `transport` selects HTTP, a model API, or MCP stdio.
+    """Read a target config; `transport` selects HTTP, a model API, MCP over HTTP or stdio.
 
     Raises OSError or ValueError when the file cannot be read or parsed, and pydantic's
     ValidationError when a field is invalid.
@@ -89,6 +101,8 @@ def load_target_config(path: Path) -> TargetConfig:
     transport = raw.get("transport") if isinstance(raw, dict) else None
     if transport == "http":
         return HttpTargetConfig.model_validate(raw)
+    if transport == "mcp-http":
+        return McpHttpConfig.model_validate(raw)
     if isinstance(transport, str) and transport in PROVIDERS:
         return ModelTargetConfig.model_validate(raw)
     return McpStdioConfig.model_validate(raw)

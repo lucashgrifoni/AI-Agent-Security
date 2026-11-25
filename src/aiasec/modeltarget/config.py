@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-import ipaddress
 import re
 from typing import Any, Literal
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from aiasec.httptarget import (
-    HttpTargetError,
-)
+from aiasec.httptarget import HttpTargetError, is_loopback
 
 Provider = Literal["anthropic", "openai", "ollama"]
 PROVIDERS: dict[str, tuple[str, str | None]] = {
@@ -87,7 +84,7 @@ class ModelTargetConfig(BaseModel):
         """An API key may travel over http only to this machine."""
 
         parts = urlsplit(self.endpoint)
-        if self.key_variable and parts.scheme == "http" and not _is_loopback(parts.hostname or ""):
+        if self.key_variable and parts.scheme == "http" and not is_loopback(parts.hostname or ""):
             raise ValueError("url uses http to another host; the API key would travel unencrypted")
         return self
 
@@ -125,12 +122,3 @@ class ModelTargetConfig(BaseModel):
         if "api_key_env" in self.model_fields_set:
             return self.api_key_env
         return PROVIDERS[self.transport][1]
-
-
-def _is_loopback(host: str) -> bool:
-    if host == "localhost":
-        return True
-    try:
-        return ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        return False

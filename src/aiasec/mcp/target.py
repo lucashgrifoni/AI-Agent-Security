@@ -1,8 +1,9 @@
 """Drive an agent under test that is exposed as one MCP tool.
 
-The target contract (docs/target-contract.md): the target is an MCP stdio server that
-exposes a tool, `aiasec_agent` by default. aiasec calls that tool once per probe turn
-with the conversation so far. The tool runs the agent and returns its reply as text
+The target contract (docs/target-contract.md): the target is an MCP server, over stdio
+or Streamable HTTP, that exposes a tool, `aiasec_agent` by default. aiasec calls that
+tool once per probe turn with the conversation so far. The tool runs the agent and
+returns its reply as text
 content, and the tools the agent called (names, or `{"name", "arguments"}` objects) in
 `structuredContent.toolsCalled`.
 """
@@ -15,9 +16,11 @@ from typing import Any
 from aiasec.core.conversation import drive_conversation, parse_tool_calls
 from aiasec.core.evaluator.rules import TargetObservation, ToolCall
 from aiasec.core.probe import Probe
-from aiasec.mcp.config import McpStdioConfig
+from aiasec.httptarget import expand_headers
+from aiasec.mcp.config import McpHttpConfig, McpStdioConfig, McpTargetSettings
+from aiasec.mcp.http_transport import HttpJsonRpcTransport
 from aiasec.mcp.stdio import DEFAULT_PROBE_TIMEOUT_SECONDS, McpSession, McpStdioAdapter
-from aiasec.mcp.transport import ProcessRunner, StdioProcessRunner
+from aiasec.mcp.transport import JsonRpcTransport, ProcessRunner, StdioProcessRunner
 
 
 class McpTargetError(RuntimeError):
@@ -38,12 +41,27 @@ class McpAgentTarget:
         *,
         runner: ProcessRunner | None = None,
     ) -> McpAgentTarget:
-        """Start the target process, initialize MCP, and check the agent tool exists."""
+        """Start the target process, connect over stdio, and check the agent tool exists."""
 
         process_runner = runner or StdioProcessRunner(
             receive_timeout_seconds=config.timeout_seconds
         )
         transport = process_runner.start(config.command, cwd=config.cwd, env=config.env or None)
+        return cls._connect(transport, config)
+
+    @classmethod
+    def start_http(cls, config: McpHttpConfig) -> McpAgentTarget:
+        """Resolve header references, connect over Streamable HTTP, and check the agent tool."""
+
+        transport = HttpJsonRpcTransport(
+            config.url, expand_headers(config.headers), config.timeout_seconds
+        )
+        return cls._connect(transport, config)
+
+    @classmethod
+    def _connect(cls, transport: JsonRpcTransport, config: McpTargetSettings) -> McpAgentTarget:
+        """Agree on a protocol version and check the agent tool; close on any failure."""
+
         client = McpStdioAdapter(transport, request_timeout=config.timeout_seconds)
         target = cls(client, agent_tool=config.agent_tool)
         try:
@@ -88,7 +106,7 @@ class McpAgentTarget:
         return drive_conversation(probe, send)
 
     def close(self) -> None:
-        """Stop the target process."""
+        """Stop the target process, if there is one."""
 
         self._client.close()
 

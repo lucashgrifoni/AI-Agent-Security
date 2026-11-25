@@ -12,6 +12,7 @@ cannot be forwarded to another host) and it only speaks http and https.
 from __future__ import annotations
 
 import http.client
+import ipaddress
 import json
 import os
 import re
@@ -32,6 +33,8 @@ from aiasec.core.evaluator.rules import TargetObservation, ToolCall
 from aiasec.core.probe import Probe
 
 MAX_RESPONSE_BYTES = 1_048_576
+# A header whose name contains one of these is treated as a credential.
+CREDENTIAL_HEADER_WORDS = ("auth", "cookie", "key", "password", "secret", "token")
 
 
 class HttpReply(NamedTuple):
@@ -67,20 +70,62 @@ class HttpTargetConfig(BaseModel):
     def require_http_url_with_host(cls, value: str) -> str:
         """Accept only http and https URLs that name a host."""
 
-        parts = urlsplit(value)
-        if parts.scheme not in {"http", "https"} or not parts.hostname:
-            raise ValueError("url must be an http or https URL with a host")
-        return value
+        return check_http_url(value)
 
     @field_validator("headers")
     @classmethod
     def reject_malformed_headers(cls, value: dict[str, str]) -> dict[str, str]:
         """Reject header names or values that could split the request."""
 
-        for name, item in value.items():
-            if not name.strip() or any(ch in name + item for ch in "\r\n\x00"):
-                raise ValueError("header names and values must not be empty or contain CR, LF, NUL")
-        return value
+        return check_headers(value)
+
+
+def check_http_url(value: str) -> str:
+    """Accept only http and https URLs that name a host (shared config rule)."""
+
+    parts = urlsplit(value)
+    if parts.scheme not in {"http", "https"} or not parts.hostname:
+        raise ValueError("url must be an http or https URL with a host")
+    return value
+
+
+def check_headers(value: dict[str, str]) -> dict[str, str]:
+    """Reject header names or values that could split the request (shared config rule)."""
+
+    for name, item in value.items():
+        if not name.strip() or any(ch in name + item for ch in "\r\n\x00"):
+            raise ValueError("header names and values must not be empty or contain CR, LF, NUL")
+    return value
+
+
+def is_loopback(host: str) -> bool:
+    """Whether a URL host is this machine, so plain http never leaves it."""
+
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def carries_credential(name: str, value: str) -> bool:
+    """Whether a configured header likely carries a secret.
+
+    Its name says so (Authorization, Cookie, X-Api-Key, X-Auth-Token...), or its value
+    reads an environment variable, where the docs tell users to keep secrets.
+    """
+
+    lowered = name.lower()
+    return any(word in lowered for word in CREDENTIAL_HEADER_WORDS) or bool(
+        _ENV_REFERENCE.search(value)
+    )
+
+
+def expand_headers(headers: Mapping[str, str]) -> dict[str, str]:
+    """Header values with their ${NAME} references resolved from the environment."""
+
+    return {name: _expand(value) for name, value in headers.items()}
 
 
 class HttpAgentTarget:
@@ -99,7 +144,7 @@ class HttpAgentTarget:
     def start(cls, config: HttpTargetConfig) -> HttpAgentTarget:
         """Resolve header references before any request is sent."""
 
-        return cls(config, {name: _expand(value) for name, value in config.headers.items()})
+        return cls(config, expand_headers(config.headers))
 
     @property
     def label(self) -> str:
