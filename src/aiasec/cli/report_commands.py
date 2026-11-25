@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 from typing import Annotated
 
 import typer
+import yaml
+from pydantic import ValidationError
 
 from aiasec.cli.common import (
     _echo_json,
+    _validation_message,
 )
 from aiasec.core.compare import compare as compare_runs
 from aiasec.core.compare import summarize
@@ -18,6 +22,7 @@ from aiasec.core.gate import (
     gate_report,
     load_sarif,
 )
+from aiasec.core.waivers import load_waivers
 
 
 def gate(
@@ -52,6 +57,13 @@ def gate(
             help="Gate a report of a probe subset (--category, --min-severity, --probe-id).",
         ),
     ] = False,
+    waivers: Annotated[
+        Path | None,
+        typer.Option(
+            "--waivers",
+            help="YAML file of accepted failures, each with a reason, an owner and an expiry.",
+        ),
+    ] = None,
 ) -> None:
     """Apply release thresholds to a SARIF report and emit a verdict."""
 
@@ -61,8 +73,19 @@ def gate(
         max_medium=max_medium,
         max_low=max_low,
     )
+    today = date.today()
     try:
-        decision = gate_report(report, thresholds, allow_partial=allow_partial)
+        accepted = load_waivers(waivers, today=today) if waivers is not None else []
+    except ValidationError as exc:
+        typer.echo(f"Invalid waiver file {waivers}:\n{_validation_message(exc)}", err=True)
+        raise typer.Exit(code=2) from exc
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        typer.echo(f"Invalid waiver file {waivers}: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+    try:
+        decision = gate_report(
+            report, thresholds, allow_partial=allow_partial, waivers=accepted, today=today
+        )
     except PartialReportError as exc:
         typer.echo(f"Gate refused the report: {exc}", err=True)
         raise typer.Exit(code=2) from exc
@@ -81,6 +104,10 @@ def gate(
     }
     if decision.selections:
         payload["selections"] = decision.selections
+    if decision.waived:
+        payload["waived"] = decision.waived
+    if decision.expired_waivers:
+        payload["expiredWaivers"] = decision.expired_waivers
     _echo_json(payload)
     if not decision.passed and exit_on_fail:
         raise typer.Exit(code=1)

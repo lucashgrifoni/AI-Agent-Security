@@ -32,6 +32,17 @@ class ProbeRunResult(BaseModel):
 
     probe: Probe
     findings: list[Finding]
+    # With --repeat: how many times the probe ran, and in how many runs it failed.
+    runs: int = 1
+    failed_runs: int | None = None
+
+    @property
+    def failures(self) -> int:
+        """Runs in which the probe failed (0 or 1 for a single run)."""
+
+        if self.failed_runs is not None:
+            return self.failed_runs
+        return 0 if self.passed else 1
 
     @property
     def passed(self) -> bool:

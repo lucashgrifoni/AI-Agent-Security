@@ -59,6 +59,13 @@ All notable changes to this project will be documented in this file.
 - `aiasec probes validate <directory>` checks a probe pack against the quality bar
   without running it: loading, pattern compilation and nested quantifiers, unique ids
   and patterns, OWASP id shape, references, and no false positive on a plain refusal.
+- `aiasec run --repeat N` runs each probe N times against the target; a probe fails
+  if any run failed, and SARIF (`failedRuns`) and Markdown record how many did.
+  `--concurrency N` keeps N probes in flight against HTTP and model API targets.
+- `aiasec gate --waivers` takes accepted failures, each with a probe, an optional
+  expectation id, a reason, an owner and an expiry at most 366 days away. Active
+  waivers remove their results from the counts and are listed under `waived`; expired
+  ones do not apply and are listed under `expiredWaivers`.
 - Decision records in `docs/adr/` for five decisions already in force: rules decide
   results, tool calls are never executed, the gate fails closed, GitHub-only
   distribution, and quoted sentinels.

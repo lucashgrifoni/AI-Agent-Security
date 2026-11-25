@@ -263,6 +263,28 @@ executed, the thresholds it applied, and a `PASS` or `FAIL` verdict. Severities
 without a configured limit are counted but never block. `--exit-on-fail` makes a
 failing verdict exit 1 so CI stops; without it the gate reports and exits 0.
 
+A known failure the team accepted can be waived instead of loosening a threshold for
+every probe of its severity. Each waiver names a probe (and optionally one
+`expectationId` from the SARIF result), a reason, an owner and an expiry at most 366
+days away:
+
+```yaml
+schema: aiasec.waivers/v1
+waivers:
+  - probeId: sql-payload-output-001
+    reason: The model quotes SQL in refusals; tracked in issue 42 until the next model.
+    owner: appsec-team
+    expires: 2027-02-28
+```
+
+```bash
+aiasec gate --report report.sarif --max-high 0 --waivers waivers.yaml --exit-on-fail
+```
+
+The gate leaves the results a waiver names out of its counts and lists them under
+`waived`. An expired waiver does not apply: its results count again and it is listed
+under `expiredWaivers`. A waiver with no reason, no owner or no end is refused (exit 2).
+
 The gate fails closed. SARIF lists only failures, so an empty result list cannot
 tell "nothing failed" from "nothing ran". A report that does not record how many
 probes were executed, or records zero, exits 2, as does an unreadable report or a
@@ -300,7 +322,15 @@ before aiasec 0.3 do not record which checks ran and cannot be compared (exit 2)
 
 A model that samples its replies can fail a probe in one run and pass it in the next.
 Compare runs made with the same model settings, at temperature 0 where the model
-allows it.
+allows it, and measure the variation with `--repeat`: each probe runs that many times
+against the target, fails if any run failed, and the report records how many runs
+failed (`failedRuns` in SARIF, a `Failed runs` line in Markdown). Against HTTP and model
+API targets, `--concurrency N` keeps N probes in flight at once; an MCP stdio target
+answers one request at a time.
+
+```bash
+aiasec run --target examples/model-targets/anthropic.json --execute --repeat 5 --concurrency 4 --output model.sarif
+```
 
 Exit codes:
 
