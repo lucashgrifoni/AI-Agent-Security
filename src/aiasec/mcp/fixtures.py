@@ -43,6 +43,8 @@ def load_jsonrpc_fixture(path: Path) -> QueuedJsonRpcTransport:
         raw_fixture = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise ValueError(f"MCP fixture is not valid JSON: {path}") from exc
+    except RecursionError as exc:  # deep nesting exhausts the decoder's stack
+        raise ValueError(f"MCP fixture nests too deeply to read: {path}") from exc
 
     responses = _extract_responses(raw_fixture)
     if not all(isinstance(response, dict) for response in responses):

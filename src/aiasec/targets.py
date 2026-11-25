@@ -85,7 +85,10 @@ def load_target_config(path: Path) -> TargetConfig:
     ValidationError when a field is invalid.
     """
 
-    raw = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except RecursionError as exc:  # deep nesting exhausts the decoder's stack
+        raise ValueError(f"Target config nests too deeply to read: {path}") from exc
     transport = raw.get("transport") if isinstance(raw, dict) else None
     if transport == "http":
         return HttpTargetConfig.model_validate(raw)

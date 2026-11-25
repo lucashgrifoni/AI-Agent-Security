@@ -1,8 +1,11 @@
 """Fuzz the static audit and the snapshots of MCP tool definitions.
 
-`aiasec mcp audit` and `aiasec mcp snapshot` read the `tools/list` result of a server
-that may be hostile. The input is that list as JSON; like McpStdioAdapter.list_tools,
-anything but a list of objects is rejected before the audit. `audit_tools` raises
+`aiasec mcp tools audit` and `aiasec mcp tools snapshot` read the `tools/list` result of
+a server that may be hostile. The input is that list as JSON; like McpStdioAdapter.list_tools,
+anything but a list of objects is rejected before the audit. The decoder's ValueError and
+RecursionError are skipped because the live path turns them into McpTransportError
+(transport._parse_line); the snapshot and fixture files are read by loaders this harness
+does not reach, and tests/test_deep_nesting_inputs.py covers them. `audit_tools` raises
 nothing and `make_snapshot` raises ValueError for a missing or repeated name; anything
 else is a crash.
 

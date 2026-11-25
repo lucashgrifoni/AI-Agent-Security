@@ -99,7 +99,11 @@ def list_mcp_tools(
         return
 
     _, server_info, tools = _fetch_tools(fixture, None, execute=False)
-    _echo_json({"mode": "fixture", "serverInfo": server_info, "tools": tools})
+    try:
+        _echo_json({"mode": "fixture", "serverInfo": server_info, "tools": tools})
+    except RecursionError as exc:  # the indenting encoder recurses once per nesting level
+        typer.echo("Cannot list the tools: a definition nests too deeply to print", err=True)
+        raise typer.Exit(code=2) from exc
 
 
 def _fetch_tools(
@@ -164,10 +168,14 @@ def snapshot_mcp_tools(
     _, server_info, tools = _fetch_tools(fixture, config, execute)
     try:
         snapshot = make_snapshot(server_info, tools)
+        text = json.dumps(snapshot, indent=2, sort_keys=True)
     except ValueError as exc:
         typer.echo(f"Cannot snapshot the tools: {exc}", err=True)
         raise typer.Exit(code=2) from exc
-    output.write_text(json.dumps(snapshot, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    except RecursionError as exc:  # the indenting encoder recurses once per nesting level
+        typer.echo("Cannot snapshot the tools: a definition nests too deeply to write", err=True)
+        raise typer.Exit(code=2) from exc
+    output.write_text(text + "\n", encoding="utf-8")
     typer.echo(f"Wrote {output} with {len(snapshot['tools'])} tool(s).")
 
 

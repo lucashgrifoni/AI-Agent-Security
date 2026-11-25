@@ -54,7 +54,10 @@ class WaiverFile(BaseModel):
 def load_waivers(path: Path, *, today: date) -> list[Waiver]:
     """Read a waiver file. A waiver that runs past MAX_WAIVER_DAYS raises ValueError."""
 
-    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except RecursionError as exc:  # the YAML composer recurses once per nesting level
+        raise ValueError(f"Waiver file nests too deeply to read: {path}") from exc
     waivers = WaiverFile.model_validate(data).waivers
     horizon = today + timedelta(days=MAX_WAIVER_DAYS)
     for waiver in waivers:
