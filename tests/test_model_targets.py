@@ -1144,7 +1144,7 @@ class Flaky(Fake):
 @pytest.fixture
 def waits(monkeypatch) -> list[float]:
     recorded: list[float] = []
-    monkeypatch.setattr("aiasec.modeltarget._sleep", recorded.append)
+    monkeypatch.setattr("aiasec.modeltarget.client._sleep", recorded.append)
     return recorded
 
 
