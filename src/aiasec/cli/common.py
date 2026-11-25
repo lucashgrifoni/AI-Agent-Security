@@ -26,6 +26,7 @@ class OutputFormat(StrEnum):
     markdown = "markdown"
     sarif = "sarif"
     html = "html"
+    junit = "junit"
 
 
 class MinSeverity(StrEnum):
@@ -153,6 +154,8 @@ def _resolve_format(output: Path, output_format: OutputFormat) -> OutputFormat:
         return OutputFormat.sarif
     if suffix in {".html", ".htm"}:
         return OutputFormat.html
+    if suffix == ".xml":
+        return OutputFormat.junit
     return OutputFormat.markdown
 
 

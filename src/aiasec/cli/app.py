@@ -13,7 +13,7 @@ from aiasec.cli.mcp_commands import (
     list_mcp_tools,
     snapshot_mcp_tools,
 )
-from aiasec.cli.probe_commands import list_probes, show_probe
+from aiasec.cli.probe_commands import list_probes, show_probe, validate_probes
 from aiasec.cli.report_commands import compare, gate
 from aiasec.cli.run_command import run
 
@@ -64,6 +64,7 @@ app.command()(gate)
 app.command()(compare)
 probes_app.command("list")(list_probes)
 probes_app.command("show")(show_probe)
+probes_app.command("validate")(validate_probes)
 mcp_tools_app.command("list")(list_mcp_tools)
 mcp_tools_app.command("snapshot")(snapshot_mcp_tools)
 mcp_tools_app.command("diff")(diff_mcp_tools)

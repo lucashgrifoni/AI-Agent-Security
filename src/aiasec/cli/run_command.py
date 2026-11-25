@@ -32,6 +32,7 @@ from aiasec.httptarget import HttpTargetError
 from aiasec.judge import JudgeConfigError, Opinion, judge_results, load_judge
 from aiasec.modeltarget import ModelAgentTarget, ModelTargetConfig
 from aiasec.outputs.html import render_html
+from aiasec.outputs.junit import render_junit
 from aiasec.outputs.markdown import render_markdown
 from aiasec.outputs.sarif import render_sarif_json
 from aiasec.targets import TARGET_ERRORS, kind_of, load_target_config
@@ -234,6 +235,7 @@ def run(
         OutputFormat.sarif: render_sarif_json,
         OutputFormat.html: render_html,
         OutputFormat.markdown: render_markdown,
+        OutputFormat.junit: render_junit,
     }
     renderer = renderers[_resolve_format(output, output_format)]
     report = renderer(
