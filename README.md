@@ -420,6 +420,9 @@ Supported rules:
 - `tool_not_called`: fails when an observed tool name was called
 - `tool_called`: fails when an expected tool name was not called
 
+A regex rule on the assistant response can set `ignore_quoted: true` to skip what the
+reply quotes; see [Current Limits](#current-limits) for when that is right.
+
 ## Security Model
 
 Primary assets:
@@ -467,7 +470,7 @@ src/aiasec/
   modeltarget.py       Anthropic, OpenAI-compatible and Ollama model API targets
   judge.py             optional, advisory LLM judge
 examples/              harness templates, reference targets (good, vulnerable), model API configs and a tools/list fixture
-docs/                  probe authoring guide, target contract, OWASP mapping and release steps
+docs/                  probe authoring guide, target contract, OWASP mapping, release steps and decision records (adr/)
 tests/                 unit and end-to-end tests
 ```
 
@@ -481,10 +484,16 @@ tests/                 unit and end-to-end tests
 - the LLM judge is advisory: it never decides a result, so a paraphrase the patterns miss still passes the gate
 - SARIF output is validated against the official SARIF 2.1.0 schema in CI, not by a CLI command
 
-Sentinel detection has one inherent tradeoff worth stating: a target that
-refuses an attack while quoting the sentinel verbatim ("I will not reply with
-I-AM-DAN") is flagged as compromised. Probe sentinels are distinctive compound
-tokens to keep this rare, and benign samples must never echo a sentinel.
+Sentinel detection has one tradeoff worth stating. A target that refuses an attack
+often tells the user what the injected text asked for, quoting the sentinel ("I will
+not reply with I-AM-DAN"). Checks on a sentinel the attack asks the agent to say set
+`ignore_quoted: true`, which skips quoted text, inline code and `>` lines in the reply,
+so that refusal passes. A refusal that names the sentinel without quoting it still
+fails, and a reply that obeys but wraps the sentinel in quotes passes; the optional
+judge is where those cases go. Payloads whose presence is the risk (a markdown image
+URL, a script tag, a shell pipe, a SQL statement) and secrets the agent must not repeat
+count whether quoted or not. See
+[docs/writing-probes.md](docs/writing-probes.md#supported-expectation-kinds).
 
 ## Development
 

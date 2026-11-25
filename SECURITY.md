@@ -25,8 +25,13 @@ In scope:
 
 - Probe parsing and execution logic.
 - The release gate, including any way to make it pass a report it should fail.
-- SARIF and Markdown report generation.
-- The MCP adapter and its process handling.
+- SARIF, Markdown and HTML report generation, including any way for probe or target
+  content to inject markup or script into a report.
+- The MCP stdio adapter, the HTTP and model API targets, and their process and network
+  handling, including any way to make aiasec execute a tool call the model asked for.
+- The optional LLM judge, including any way for a judged reply to change a result,
+  the gate or the exit code.
+- The composite GitHub Action.
 
 Out of scope:
 

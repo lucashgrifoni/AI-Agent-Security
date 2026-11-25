@@ -4,7 +4,7 @@ Each bundled probe declares the OWASP risk it tests in `metadata`. The ids trave
 SARIF result and rule properties as `owasp_llm`, `owasp_mcp` and `owasp_agentic`, so
 code scanning can filter on them.
 
-Sources, checked on 2026-10-07:
+Sources, checked on 2026-11-23:
 
 - [OWASP Top 10 for LLM Applications 2025](https://genai.owasp.org/llm-top-10/)
 - [OWASP MCP Top 10](https://owasp.org/www-project-mcp-top-10/), version 2025, in
