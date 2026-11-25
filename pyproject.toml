@@ -24,6 +24,7 @@ dev = [
   "hypothesis>=6.100.0",
   "jsonschema>=4.22.0",
   "mypy>=1.10.0",
+  "mutmut>=3.8.0",
   "pytest>=8.2.0",
   "pytest-cov>=5.0.0",
   "ruff>=0.5.0",
@@ -57,6 +58,24 @@ source = ["aiasec"]
 fail_under = 90
 skip_covered = true
 show_missing = true
+
+[tool.mutmut]
+# Sampled mutation testing (docs/testing.md): only the two modules a release verdict
+# rests on are mutated, and mutmut runs each mutant against the tests that reach it.
+# Linux only; .github/workflows/mutation.yml runs it weekly and on demand.
+source_paths = ["src/aiasec"]
+only_mutate = ["src/aiasec/core/evaluator/rules.py", "src/aiasec/core/gate.py"]
+# Files the test suite reads besides src/ and tests/, which mutmut copies by itself.
+also_copy = [
+  ".github",
+  "CHANGELOG.md",
+  "CODE_OF_CONDUCT.md",
+  "README.md",
+  "action.yml",
+  "docs",
+  "examples",
+  "fuzz",
+]
 
 [tool.ruff]
 line-length = 100

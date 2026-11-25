@@ -1,0 +1,97 @@
+# Mutation testing
+#
+# Runs mutmut on the two modules a release verdict rests on, the rules evaluator
+# (src/aiasec/core/evaluator/rules.py) and the gate (src/aiasec/core/gate.py), as set in
+# [tool.mutmut] of pyproject.toml. It measures whether the test suite notices when that
+# code is wrong, which line coverage cannot show.
+#
+# Informational, not a gate: surviving mutants never fail the job. The score and the
+# list of survivors are uploaded as the `mutation-report` artifact; docs/testing.md
+# explains how to read them. mutmut forks per mutant and runs on Linux only.
+#
+# Supply-chain hardening: actions are pinned to commit SHAs and mutmut installs from the
+# hash-locked .github/requirements/ci.txt; Dependabot refreshes both.
+#
+# Harden-Runner egress: audit by design, see the job.
+#
+# Secrets: none.
+
+name: Mutation testing
+
+on:
+  schedule:
+    - cron: "0 6 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutation-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  mutmut:
+    name: mutmut (rules and gate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          # audit by design: this job moves artifacts or attests a build through rotating
+          # GitHub endpoints that an exact allowlist cannot name; the global blocklist applies.
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dev dependencies
+        run: |
+          python -m pip install --require-hashes -r .github/requirements/ci.txt
+          python -m pip install --no-deps --no-build-isolation -e .
+
+      - name: Run mutmut
+        # A surviving mutant does not fail this step; a red baseline suite does. The console
+        # script, not `python -m mutmut`, which mutmut warns re-executes its main module.
+        run: mutmut run --max-children 4
+
+      - name: Write the report
+        run: |
+          mutmut export-cicd-stats
+          mkdir -p mutation-report
+          cp mutants/mutmut-cicd-stats.json mutation-report/
+          # Every mutant the tests did not kill, by name; `mutmut show <name>` prints its diff.
+          mutmut results > mutation-report/not-killed.txt
+          python - <<'PY' | tee mutation-report/summary.md >> "$GITHUB_STEP_SUMMARY"
+          import json
+          stats = json.load(open("mutation-report/mutmut-cicd-stats.json"))
+          tested = stats["total"] - stats["skipped"]
+          detected = stats["killed"] + stats["timeout"]
+          score = 100 * detected / tested if tested else 0.0
+          print("## Mutation score: rules evaluator and gate\n")
+          print(f"{score:.1f}% ({detected} of {tested} mutants detected; informational)\n")
+          for key in ("killed", "timeout", "survived", "no_tests", "suspicious", "skipped", "total"):
+              print(f"- {key}: {stats.get(key, 0)}")
+          PY
+
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: mutation-report
+          path: mutation-report/
+          if-no-files-found: warn
+          retention-days: 30
