@@ -80,16 +80,22 @@ runs:
         python-version: ${{ inputs.python-version }}
 
     - name: Install aiasec from the pinned action checkout
+      id: install
       shell: bash
       # Dependencies come from the hash-locked file in the same checkout, so the commit
       # you pin also pins every package installed alongside aiasec. The package builds
-      # with the locked hatchling and pulls in nothing else.
+      # with the locked hatchling and pulls in nothing else. A virtualenv keeps its
+      # executables in Scripts/ on Windows and in bin/ elsewhere; the later steps read
+      # the directory from this step's output.
       run: |
-        python -m venv "$RUNNER_TEMP/aiasec-venv"
-        "$RUNNER_TEMP/aiasec-venv/bin/python" -m pip install --quiet --require-hashes \
+        venv="$RUNNER_TEMP/aiasec-venv"
+        python -m venv "$venv"
+        if [ "$RUNNER_OS" = "Windows" ]; then bin="$venv/Scripts"; else bin="$venv/bin"; fi
+        "$bin/python" -m pip install --quiet --require-hashes \
           -r "$GITHUB_ACTION_PATH/.github/requirements/action.txt"
-        "$RUNNER_TEMP/aiasec-venv/bin/python" -m pip install --quiet --no-deps \
+        "$bin/python" -m pip install --quiet --no-deps \
           --no-build-isolation "$GITHUB_ACTION_PATH"
+        echo "bin=$bin" >> "$GITHUB_OUTPUT"
 
     - name: Send the probes to the target
       id: run
@@ -97,6 +103,7 @@ runs:
       # Inputs arrive through env, never interpolated into the script, so a hostile
       # input value cannot inject shell.
       env:
+        AIASEC_BIN: ${{ steps.install.outputs.bin }}
         AIASEC_TARGET: ${{ inputs.target }}
         AIASEC_PROBES: ${{ inputs.probes }}
         AIASEC_SARIF: ${{ inputs.sarif-file }}
@@ -112,7 +119,7 @@ runs:
         # A report left by an earlier run must never stand in for this one.
         rm -f -- "$AIASEC_SARIF"
         set +e
-        "$RUNNER_TEMP/aiasec-venv/bin/aiasec" "${args[@]}"
+        "$AIASEC_BIN/aiasec" "${args[@]}"
         status=$?
         set -e
         # 0 = no probe failed, 1 = findings (the gate decides), anything else = broken run.
@@ -131,6 +138,7 @@ runs:
       id: gate
       shell: bash
       env:
+        AIASEC_BIN: ${{ steps.install.outputs.bin }}
         AIASEC_SARIF: ${{ inputs.sarif-file }}
         MAX_CRITICAL: ${{ inputs.max-critical }}
         MAX_HIGH: ${{ inputs.max-high }}
@@ -148,7 +156,7 @@ runs:
         if [ -n "$MAX_LOW" ]; then args+=(--max-low "$MAX_LOW"); fi
         decision="$RUNNER_TEMP/aiasec-gate.json"
         set +e
-        "$RUNNER_TEMP/aiasec-venv/bin/aiasec" "${args[@]}" > "$decision"
+        "$AIASEC_BIN/aiasec" "${args[@]}" > "$decision"
         status=$?
         set -e
         cat "$decision"

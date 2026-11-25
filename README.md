@@ -166,9 +166,12 @@ Inputs: `target` (required), `probes` (default: the bundled suite), `sarif-file`
 (default `aiasec.sarif`), `categories`, `min-severity` and `probe-ids` (default: no
 filter; see [Select probes](#select-probes)), `max-critical` and `max-high` (default
 `0`), `max-medium` and `max-low` (default unlimited), and `python-version` (default
-`3.12`). Outputs: `sarif-file` and `verdict`. The action runs on Linux and macOS
-runners. When you set a selection input, the action lets the gate accept the subset
-report (`--allow-partial`), because your workflow asked for it.
+`3.12`). Outputs: `sarif-file` and `verdict`. The action is written for Linux, macOS
+and Windows runners: its steps use bash, which GitHub-hosted runners provide on all
+three, and it finds the virtualenv's `bin/` or `Scripts/` directory by the runner's OS.
+Only the Linux self-test blocks a merge; see [Current Limits](#current-limits). When
+you set a selection input, the action lets the gate accept the subset report
+(`--allow-partial`), because your workflow asked for it.
 
 ### Inspect probes
 
@@ -556,7 +559,7 @@ tests/                 unit and end-to-end tests
 - target mode supports MCP stdio and HTTP harnesses through the contract in `docs/target-contract.md`, and Anthropic, OpenAI-compatible and Ollama model APIs directly
 - the model API targets were tested against local servers that imitate each provider's documented formats; only the Anthropic one has also run against the live API (claude-sonnet-5-5, the full suite and the judge), the OpenAI and Ollama ones have not. They send each probe turn as one request and never execute the tool calls the model asks for, so they test the model with your prompt and tools, not your agent's own loop
 - target mode speaks both MCP eras on stdio: 2026-07-28 (per-request `_meta`, found with `server/discover`) and the `initialize`-based revisions; multi round-trip results (`input_required`) are not supported
-- the GitHub Action does not support Windows runners (it uses a POSIX virtualenv layout)
+- the GitHub Action's self-test runs it on Linux and Windows runners, but only the Linux checks are required to merge: a change that breaks the action on Windows, or makes it pass a vulnerable agent there, can still merge. macOS runners are expected to work but are not exercised in CI
 - no MCP HTTP adapter yet
 - the LLM judge is advisory: it never decides a result, so a paraphrase the patterns miss still passes the gate
 - SARIF output is validated against the official SARIF 2.1.0 schema in CI, not by a CLI command
