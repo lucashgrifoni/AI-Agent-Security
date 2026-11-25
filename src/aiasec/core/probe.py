@@ -160,12 +160,21 @@ def expectation_id(probe_id: str, expectation: ProbeExpectation) -> str:
 def load_probe_file(path: Path, *, root: Path | None = None) -> Probe:
     """Load and validate one probe YAML file."""
 
-    data: Any = yaml.safe_load(path.read_text(encoding="utf-8"))
-    if not isinstance(data, dict):
-        raise ValueError(f"Probe file must contain a YAML mapping: {path}")
-    probe = Probe.model_validate(data)
+    probe = parse_probe(path.read_text(encoding="utf-8"), path)
     probe._source = _source_path(path, root)
     return probe
+
+
+def parse_probe(text: str, origin: Path | str = "probe") -> Probe:
+    """Validate one probe from YAML text; ValueError or yaml.YAMLError when it is not one."""
+
+    try:
+        data: Any = yaml.safe_load(text)
+    except RecursionError as exc:  # the YAML composer recurses once per nesting level
+        raise ValueError(f"Probe file nests too deeply to read: {origin}") from exc
+    if not isinstance(data, dict):
+        raise ValueError(f"Probe file must contain a YAML mapping: {origin}")
+    return Probe.model_validate(data)
 
 
 def load_probes_from_dir(path: Path) -> list[Probe]:

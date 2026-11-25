@@ -140,19 +140,27 @@ def _finding(rule: AuditRule, tool: str, field: str, excerpt: str) -> AuditFindi
     )
 
 
-def _texts(value: Any, path: str = "") -> Iterator[tuple[str, str]]:
-    """Every string in a tool definition, and every object key, with its JSON path."""
+def _texts(value: Any) -> Iterator[tuple[str, str]]:
+    """Every string in a tool definition, and every object key, with its JSON path.
 
-    if isinstance(value, str):
-        yield path or "$", value
-    elif isinstance(value, Mapping):
-        for key, item in value.items():
-            child = f"{path}.{key}" if path else str(key)
-            yield f"{child} (key)", str(key)
-            yield from _texts(item, child)
-    elif isinstance(value, list):
-        for index, item in enumerate(value):
-            yield from _texts(item, f"{path}[{index}]")
+    The walk keeps its own stack: a server controls how deep a definition nests, and
+    recursing once per level ran out of Python's stack about a thousand levels down.
+    """
+
+    stack: list[tuple[str, Any]] = [("", value)]
+    while stack:
+        path, item = stack.pop()
+        if isinstance(item, str):
+            yield path or "$", item
+        elif isinstance(item, Mapping):
+            children: list[tuple[str, Any]] = []
+            for key, child in item.items():
+                child_path = f"{path}.{key}" if path else str(key)
+                children += [(f"{child_path} (key)", str(key)), (child_path, child)]
+            stack.extend(reversed(children))
+        elif isinstance(item, list):
+            indexed = [(f"{path}[{index}]", child) for index, child in enumerate(item)]
+            stack.extend(reversed(indexed))
 
 
 def _cross_tool_findings(tools: Sequence[Mapping[str, Any]]) -> list[AuditFinding]:

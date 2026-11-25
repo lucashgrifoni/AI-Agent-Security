@@ -93,10 +93,18 @@ class GateDecision(BaseModel):
 def load_sarif(path: Path) -> Any:
     """Load a SARIF report from disk."""
 
+    return parse_sarif(path.read_text(encoding="utf-8"), path)
+
+
+def parse_sarif(text: str, origin: Path | str = "report") -> Any:
+    """Parse a SARIF report; ValueError when it is not JSON aiasec can read."""
+
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return json.loads(text)
     except json.JSONDecodeError as exc:
-        raise ValueError(f"Report is not valid JSON: {path}") from exc
+        raise ValueError(f"Report is not valid JSON: {origin}") from exc
+    except RecursionError as exc:  # deep nesting exhausts the decoder's stack
+        raise ValueError(f"Report nests too deeply to read: {origin}") from exc
 
 
 def count_severities(document: Any) -> dict[str, int]:

@@ -110,3 +110,15 @@ def test_cli_gate_rejects_malformed_report(tmp_path) -> None:
     result = runner.invoke(app, ["gate", "--report", str(report), "--max-high", "0"])
 
     assert result.exit_code == 2
+
+
+def test_cli_gate_rejects_a_report_nested_too_deeply_instead_of_crashing(tmp_path) -> None:
+    # Found by fuzz/fuzz_sarif_report.py: deep nesting exhausts the JSON decoder's stack
+    # with RecursionError, which escaped as a traceback and exit code 1.
+    report = tmp_path / "deep.sarif"
+    report.write_text("[" * 100_000, encoding="utf-8")
+
+    result = CliRunner().invoke(app, ["gate", "--report", str(report), "--max-high", "0"])
+
+    assert result.exit_code == 2
+    assert "nests too deeply" in result.output
