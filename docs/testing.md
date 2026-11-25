@@ -35,7 +35,12 @@ libFuzzer dictionaries `fuzz/json.dict`, `fuzz/quotes.dict` or `fuzz/yaml.dict`.
 Writing the harnesses found three crashes, now fixed, each with a regression test and a seed:
 a deeply nested report escaped `aiasec gate` and `aiasec compare` as `RecursionError`
 (exit code 1 and a traceback instead of 2), so did a deeply nested probe file, and a
-tool definition nested over a thousand levels deep crashed `aiasec mcp audit`.
+tool definition nested over a thousand levels deep crashed `aiasec mcp tools audit`.
+Review then found the same `RecursionError` in files no harness reads: tool snapshots, MCP
+fixtures and stdio configs, target and judge configs, and waiver files, plus the indented
+output of `aiasec mcp tools list` and `aiasec mcp tools snapshot` for a definition deeper
+than Python's recursion limit. Each now fails with exit code 2, and
+`tests/test_deep_nesting_inputs.py` covers every one.
 
 ### How it runs
 
@@ -46,7 +51,8 @@ dependencies from the hash-locked `.github/requirements/action.txt` and bundles 
 
 - `cflite-pr.yml` fuzzes all harnesses for 600 seconds in total on each pull request.
 - `cflite-batch.yml` fuzzes them for 1,800 seconds a day and keeps the grown corpus as
-  an artifact the pull-request runs start from.
+  an artifact the pull-request runs start from (see the known limits on who else can
+  write that artifact).
 - `tests/test_fuzz_harnesses.py` replays every seed through every harness on every
   platform, without Atheris. It also replaces each fuzzed function with one that raises
   an undocumented exception and requires the harness to let it through, which proves
@@ -54,8 +60,9 @@ dependencies from the hash-locked `.github/requirements/action.txt` and bundles 
 
 Both workflows build with AddressSanitizer. For pure Python code the findings are
 uncaught exceptions, failed oracles, timeouts (a regular expression that backtracks)
-and memory blow-ups; the sanitizer watches the native code underneath (the interpreter,
-pydantic-core).
+and memory blow-ups. AddressSanitizer is preloaded, so allocator misuse and intercepted
+libc calls in native code are caught. The interpreter and pydantic-core are prebuilt and
+not instrumented, so memory errors inside them mostly go unseen.
 
 ### Running it locally
 
@@ -105,9 +112,18 @@ Replace `fuzz_quotes` with any harness name. On Git Bash for Windows, prefix the
 - The OSS-Fuzz builder runs Python 3.11; aiasec declares 3.12 and later. The sources
   parse and import on 3.11, and build.sh bundles them from `src/` instead of installing
   the package. A defect that only Python 3.12 shows will not be found here.
-- `fuzz_tool_calls.py` and `fuzz_mcp_tools.py` decode JSON as their callers do (their
-  callers turn the decoder's `ValueError` and `RecursionError` into an error), so the
-  decoding itself is the standard library's, not aiasec's.
+- `fuzz_tool_calls.py` and `fuzz_mcp_tools.py` decode JSON with the standard library and
+  skip the decoder's `ValueError` and `RecursionError`, as the live paths they model do
+  (the HTTP target, `aiasec run --tool-calls-file` and the MCP stdio transport). The
+  decoding itself is not fuzzed, and neither are the file loaders (snapshots, fixtures,
+  configs, waivers); `tests/test_deep_nesting_inputs.py` covers their deep-nesting errors.
+- ClusterFuzzLite finds the saved corpus by artifact name across the whole repository,
+  not by workflow, branch or event. Any workflow run allowed to execute, a pull request
+  from a fork included once its run is approved, can upload an artifact with that name,
+  and the next batch run starts from it. The corpus is data and only shapes where
+  fuzzing starts, but it is not trusted batch output. Keep approval of fork pull request
+  workflows on; if the corpus must be trusted, use a storage repository only the batch
+  job can write to.
 - Python's JSON decoder accepts `NaN` and `Infinity`. `NaN` never equals itself, so a
   tool definition carrying it is reported as changed by `aiasec mcp tools diff` against an
   identical snapshot: a false alarm, never a missed change. `fuzz_mcp_tools.py` leaves

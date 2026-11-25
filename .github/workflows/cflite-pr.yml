@@ -7,9 +7,12 @@
 # (cflite-batch.yml) saves as an artifact. docs/testing.md explains how to read a crash.
 #
 # Supply-chain hardening:
-#   - Actions are pinned to commit SHAs (Dependabot refreshes them). The ClusterFuzzLite
-#     actions run the gcr.io/oss-fuzz-base/clusterfuzzlite-*:v1 images their action.yml
-#     names by tag; a workflow cannot pin them further.
+#   - Actions are pinned to commit SHAs (Dependabot refreshes them). The pinned
+#     ClusterFuzzLite actions still run gcr.io/oss-fuzz-base/clusterfuzzlite-*:v1, a
+#     mutable tag named in their action.yml, with the GITHUB_TOKEN in its environment.
+#     A workflow could pin the images by digest with docker:// steps that copy the
+#     action's environment by hand; that is not done, so the executed image is unpinned
+#     by choice. Accepted residual risk: the token is read-only (contents, actions).
 #   - The build image is pinned by digest in .clusterfuzzlite/Dockerfile.
 #
 # Harden-Runner egress: audit by design, see the job.
